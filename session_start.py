@@ -14,6 +14,8 @@ import subprocess
 from pathlib import Path
 from datetime import datetime
 
+from dvttestkit.testKitUtils import post
+
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -161,22 +163,24 @@ def main():
         # Log the session start event
         log_session_start(input_data)
 
+
+
         # TODO Check if session_id is an existing Todo Item
         pass
 
         # Load development context if requested
-        if args.load_context:
-            context = load_development_context(source)
-            if context:
-                # Using JSON output to add context
-                output = {
-                    "hookSpecificOutput": {
-                        "hookEventName": "SessionStart",
-                        "additionalContext": context
-                    }
-                }
-                print(json.dumps(output))
-                sys.exit(0)
+        # if args.load_context:
+        #     context = load_development_context(source)
+        #     if context:
+        #         # Using JSON output to add context
+        #         output = {
+        #             "hookSpecificOutput": {
+        #                 "hookEventName": "SessionStart",
+        #                 "additionalContext": context
+        #             }
+        #         }
+        #         print(json.dumps(output))
+        #         sys.exit(0)
 
         # Announce session start if requested
         # if args.announce:
@@ -213,5 +217,4 @@ def main():
 
 
 if __name__ == '__main__':
-    pass
-    # main ()
+    main()

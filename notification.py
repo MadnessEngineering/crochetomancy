@@ -13,7 +13,8 @@ import sys
 import subprocess
 import random
 from pathlib import Path
-
+from dvttestkit.testKitUtils import post as _post
+from dvttestkit.testKitUtils import get as _get
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -52,41 +53,43 @@ def get_tts_script_path():
 
 def announce_notification():
     """Announce that the agent needs user input."""
-    try:
-        tts_script = get_tts_script_path()
-        if not tts_script:
-            return  # No TTS scripts available
+    _post(topic="status/device_name/claude/notification", payload="notification", retain=False)
 
-        # Get engineer name if available
-        engineer_name = os.getenv('ENGINEER_NAME', '').strip()
+    # try:
+    #     tts_script = get_tts_script_path()
+    #     if not tts_script:
+    #         return  # No TTS scripts available
 
-        # Create notification message with 30% chance to include name
-        if engineer_name and random.random() < 0.3:
-            notification_message = f"{engineer_name}, your agent needs your input"
-        else:
-            notification_message = "Your agent needs your input"
+    #     # Get engineer name if available
+    #     engineer_name = os.getenv('ENGINEER_NAME', '').strip()
 
-        # Call the TTS script with the notification message
-        subprocess.run([
-            "uv", "run", tts_script, notification_message
-        ],
-        capture_output=True,  # Suppress output
-        timeout=10  # 10-second timeout
-        )
+    #     # Create notification message with 30% chance to include name
+    #     if engineer_name and random.random() < 0.3:
+    #         notification_message = f"{engineer_name}, your agent needs your input"
+    #     else:
+    #         notification_message = "Your agent needs your input"
 
-    except (subprocess.TimeoutExpired, subprocess.SubprocessError, FileNotFoundError):
-        # Fail silently if TTS encounters issues
-        pass
-    except Exception:
-        # Fail silently for any other errors
-        pass
+    #     # Call the TTS script with the notification message
+    #     subprocess.run([
+    #         "uv", "run", tts_script, notification_message
+    #     ],
+    #     capture_output=True,  # Suppress output
+    #     timeout=10  # 10-second timeout
+    #     )
+
+    # except (subprocess.TimeoutExpired, subprocess.SubprocessError, FileNotFoundError):
+    #     # Fail silently if TTS encounters issues
+    #     pass
+    # except Exception:
+    #     # Fail silently for any other errors
+    #     pass
 
 
 def main():
     try:
         # Parse command line arguments
         parser = argparse.ArgumentParser()
-        parser.add_argument('--notify', action='store_true', help='Enable TTS notifications')
+        parser.add_argument('--notify', action='store_true', help='Enable MQTT notifications')
         args = parser.parse_args()
 
         # Read JSON input from stdin
@@ -110,6 +113,7 @@ def main():
 
         # Append new data
         log_data.append(input_data)
+        _post(topic="status/device_name/claude/notification", payload=str(json.dumps(input_data)), retain=False)
 
         # Write back to file with formatting
         with open(log_file, 'w') as f:
@@ -130,5 +134,4 @@ def main():
         sys.exit(0)
 
 if __name__ == '__main__':
-    # main()
-    pass
+    main()
