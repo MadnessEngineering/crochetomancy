@@ -3,6 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = [
 #     "python-dotenv",
+#     "pymongo",
 # ]
 # ///
 
@@ -13,12 +14,27 @@ import sys
 import subprocess
 from pathlib import Path
 from datetime import datetime
+from pymongo import MongoClient
 
 try:
     from dotenv import load_dotenv
     load_dotenv()
 except ImportError:
     pass  # dotenv is optional
+
+
+def get_mongo_client():
+    """Get MongoDB client with configurable URI."""
+    mongo_uri = os.getenv('CLAUDE_MONGO_URI', 'mongodb://localhost:27017/')
+    return MongoClient(mongo_uri)
+
+def get_database_name():
+    """Generate database name from project root path."""
+    # Use the project root path as database name, sanitized for MongoDB
+    root_path = str(Path.cwd()).replace('/', '_').replace('\\', '_').replace('.', '_')
+    # Remove leading underscores and limit length
+    db_name = root_path.lstrip('_')[:64]
+    return f"claude_{db_name}"
 
 
 def get_tts_script_path():
@@ -91,48 +107,61 @@ def main():
         session_id = input_data.get("session_id", "")
         stop_hook_active = input_data.get("stop_hook_active", False)
 
-        # Ensure log directory exists
-        log_dir = os.path.join(os.getcwd(), "logs")
-        os.makedirs(log_dir, exist_ok=True)
-        log_path = os.path.join(log_dir, "subagent_stop.json")
+        # Store data in MongoDB
+        try:
+            client = get_mongo_client()
+            db_name = get_database_name()
+            db = client[db_name]
+            collection = db['subagent_stop']
 
-        # Read existing log data or initialize empty list
-        if os.path.exists(log_path):
-            with open(log_path, 'r') as f:
-                try:
-                    log_data = json.load(f)
-                except (json.JSONDecodeError, ValueError):
-                    log_data = []
-        else:
-            log_data = []
+            document = {
+                'session_id': session_id,
+                'stop_hook_active': stop_hook_active,
+                'timestamp': datetime.utcnow(),
+                'full_data': input_data
+            }
 
-        # Append new data
-        log_data.append(input_data)
-
-        # Write back to file with formatting
-        with open(log_path, 'w') as f:
-            json.dump(log_data, f, indent=2)
+            collection.insert_one(document)
+            client.close()
+        except Exception:
+            # Fail silently if MongoDB is not available
+            pass
 
         # Handle --chat switch (same as stop.py)
         if args.chat and 'transcript_path' in input_data:
             transcript_path = input_data['transcript_path']
             if os.path.exists(transcript_path):
-                # Read .jsonl file and convert to JSON array
-                chat_data = []
+                # Read .jsonl file and store messages in MongoDB
+                chat_messages = []
                 try:
                     with open(transcript_path, 'r') as f:
                         for line in f:
                             line = line.strip()
                             if line:
                                 try:
-                                    chat_data.append(json.loads(line))
+                                    chat_messages.append(json.loads(line))
                                 except json.JSONDecodeError:
                                     pass  # Skip invalid lines
 
-                    # Write to logs/chat.json
-                    chat_file = os.path.join(log_dir, 'chat.json')
-                    with open(chat_file, 'w') as f:
-                        json.dump(chat_data, f, indent=2)
+                    # Store transcript in MongoDB
+                    if chat_messages:
+                        try:
+                            client = get_mongo_client()
+                            db_name = get_database_name()
+                            db = client[db_name]
+                            collection = db['subagent_transcript']
+
+                            document = {
+                                'session_id': session_id,
+                                'timestamp': datetime.utcnow(),
+                                'messages': chat_messages,
+                                'transcript_path': transcript_path
+                            }
+
+                            collection.insert_one(document)
+                            client.close()
+                        except Exception:
+                            pass  # Fail silently
                 except Exception:
                     pass  # Fail silently
 

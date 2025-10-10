@@ -3,6 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = [
 #     "python-dotenv",
+#     "pymongo",
 # ]
 # ///
 
@@ -13,6 +14,8 @@ import sys
 import subprocess
 import random
 from pathlib import Path
+from datetime import datetime
+from pymongo import MongoClient
 from dvttestkit.testKitUtils import post as _post
 from dvttestkit.testKitUtils import get as _get
 try:
@@ -20,6 +23,20 @@ try:
     load_dotenv()
 except ImportError:
     pass  # dotenv is optional
+
+
+def get_mongo_client():
+    """Get MongoDB client with configurable URI."""
+    mongo_uri = os.getenv('CLAUDE_MONGO_URI', 'mongodb://localhost:27017/')
+    return MongoClient(mongo_uri)
+
+def get_database_name():
+    """Generate database name from project root path."""
+    # Use the project root path as database name, sanitized for MongoDB
+    root_path = str(Path.cwd()).replace('/', '_').replace('\\', '_').replace('.', '_')
+    # Remove leading underscores and limit length
+    db_name = root_path.lstrip('_')[:64]
+    return f"claude_{db_name}"
 
 
 def get_tts_script_path():
@@ -95,29 +112,27 @@ def main():
         # Read JSON input from stdin
         input_data = json.loads(sys.stdin.read())
 
-        # Ensure log directory exists
-        import os
-        log_dir = os.path.join(os.getcwd(), 'logs')
-        os.makedirs(log_dir, exist_ok=True)
-        log_file = os.path.join(log_dir, 'notification.json')
+        # Store data in MongoDB
+        try:
+            client = get_mongo_client()
+            db_name = get_database_name()
+            db = client[db_name]
+            collection = db['notification']
 
-        # Read existing log data or initialize empty list
-        if os.path.exists(log_file):
-            with open(log_file, 'r') as f:
-                try:
-                    log_data = json.load(f)
-                except (json.JSONDecodeError, ValueError):
-                    log_data = []
-        else:
-            log_data = []
+            document = {
+                'message': input_data.get('message'),
+                'timestamp': datetime.utcnow(),
+                'full_data': input_data
+            }
 
-        # Append new data
-        log_data.append(input_data)
+            collection.insert_one(document)
+            client.close()
+        except Exception:
+            # Fail silently if MongoDB is not available
+            pass
+
+        # Post to MQTT
         _post(topic="status/device_name/claude/notification", payload=str(json.dumps(input_data)), retain=False)
-
-        # Write back to file with formatting
-        with open(log_file, 'w') as f:
-            json.dump(log_data, f, indent=2)
 
         # Announce notification via TTS only if --notify flag is set
         # Skip TTS for the generic "Claude is waiting for your input" message

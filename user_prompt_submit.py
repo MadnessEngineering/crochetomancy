@@ -3,6 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = [
 #     "python-dotenv",
+#     "pymongo",
 # ]
 # ///
 
@@ -12,6 +13,7 @@ import os
 import sys
 from pathlib import Path
 from datetime import datetime
+from pymongo import MongoClient
 
 try:
     from dotenv import load_dotenv
@@ -20,29 +22,39 @@ except ImportError:
     pass  # dotenv is optional
 
 
+def get_mongo_client():
+    """Get MongoDB client with configurable URI."""
+    mongo_uri = os.getenv('CLAUDE_MONGO_URI', 'mongodb://localhost:27017/')
+    return MongoClient(mongo_uri)
+
+def get_database_name():
+    """Generate database name from project root path."""
+    # Use the project root path as database name, sanitized for MongoDB
+    root_path = str(Path.cwd()).replace('/', '_').replace('\\', '_').replace('.', '_')
+    # Remove leading underscores and limit length
+    db_name = root_path.lstrip('_')[:64]
+    return f"claude_{db_name}"
+
 def log_user_prompt(session_id, input_data):
-    """Log user prompt to logs directory."""
-    # Ensure logs directory exists
-    log_dir = Path("logs")
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_file = log_dir / 'user_prompt_submit.json'
+    """Log user prompt to MongoDB."""
+    try:
+        client = get_mongo_client()
+        db_name = get_database_name()
+        db = client[db_name]
+        collection = db['user_prompt']
 
-    # Read existing log data or initialize empty list
-    if log_file.exists():
-        with open(log_file, 'r') as f:
-            try:
-                log_data = json.load(f)
-            except (json.JSONDecodeError, ValueError):
-                log_data = []
-    else:
-        log_data = []
+        document = {
+            'session_id': session_id,
+            'prompt': input_data.get('prompt'),
+            'timestamp': datetime.utcnow(),
+            'full_data': input_data
+        }
 
-    # Append the entire input data
-    log_data.append(input_data)
-
-    # Write back to file with formatting
-    with open(log_file, 'w') as f:
-        json.dump(log_data, f, indent=2)
+        collection.insert_one(document)
+        client.close()
+    except Exception:
+        # Fail silently if MongoDB is not available
+        pass
 
 
 # Legacy function removed - now handled by manage_session_data

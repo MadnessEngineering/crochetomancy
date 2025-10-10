@@ -1,39 +1,69 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.8"
+# dependencies = [
+#     "pymongo",
+# ]
 # ///
 
 import json
 import os
 import sys
 from pathlib import Path
+from datetime import datetime
+from pymongo import MongoClient
+
+def get_mongo_client():
+    """Get MongoDB client with configurable URI."""
+    mongo_uri = os.getenv('CLAUDE_MONGO_URI', 'mongodb://localhost:27017/')
+    return MongoClient(mongo_uri)
+
+def get_database_name():
+    """Generate database name from project root path."""
+    # Use the project root path as database name, sanitized for MongoDB
+    root_path = str(Path.cwd()).replace('/', '_').replace('\\', '_').replace('.', '_')
+    # Remove leading underscores and limit length
+    db_name = root_path.lstrip('_')[:64]
+    return f"claude_{db_name}"
 
 def main():
     try:
         # Read JSON input from stdin
         input_data = json.load(sys.stdin)
 
-        # Ensure log directory exists
-        log_dir = Path.cwd() / 'logs'
-        log_dir.mkdir(parents=True, exist_ok=True)
-        log_path = log_dir / 'post_tool_use.json'
+        # Update MongoDB document with post-execution data
+        try:
+            # Read document ID from temp file
+            temp_dir = Path.cwd() / '.claude_temp'
+            id_file = temp_dir / 'last_tool_use_id.txt'
 
-        # Read existing log data or initialize empty list
-        if log_path.exists():
-            with open(log_path, 'r') as f:
-                try:
-                    log_data = json.load(f)
-                except (json.JSONDecodeError, ValueError):
-                    log_data = []
-        else:
-            log_data = []
+            if id_file.exists():
+                with open(id_file, 'r') as f:
+                    doc_id = f.read().strip()
 
-        # Append new data
-        log_data.append(input_data)
+                client = get_mongo_client()
+                db_name = get_database_name()
+                db = client[db_name]
+                collection = db['tool_use']
 
-        # Write back to file with formatting
-        with open(log_path, 'w') as f:
-            json.dump(log_data, f, indent=2)
+                # Update the document with post-execution data
+                update_data = {
+                    '$set': {
+                        'timestamp_post': datetime.utcnow(),
+                        'full_output': input_data,
+                        'tool_output': input_data.get('tool_output'),
+                        'status': 'complete'
+                    }
+                }
+
+                collection.update_one({'_id': doc_id}, update_data)
+                client.close()
+
+                # Clean up temp file
+                id_file.unlink()
+        except Exception:
+            # Fail silently if MongoDB is not available or document not found
+            pass
 
         sys.exit(0)
 

@@ -1,6 +1,9 @@
 #!/usr/bin/env -S uv run --script
 # /// script
 # requires-python = ">=3.8"
+# dependencies = [
+#     "pymongo",
+# ]
 # ///
 
 import json
@@ -8,6 +11,22 @@ import os
 import sys
 import re
 from pathlib import Path
+from datetime import datetime
+from pymongo import MongoClient
+import uuid
+
+def get_mongo_client():
+    """Get MongoDB client with configurable URI."""
+    mongo_uri = os.getenv('CLAUDE_MONGO_URI', 'mongodb://localhost:27017/')
+    return MongoClient(mongo_uri)
+
+def get_database_name():
+    """Generate database name from project root path."""
+    # Use the project root path as database name, sanitized for MongoDB
+    root_path = str(Path.cwd()).replace('/', '_').replace('\\', '_').replace('.', '_')
+    # Remove leading underscores and limit length
+    db_name = root_path.lstrip('_')[:64]
+    return f"claude_{db_name}"
 
 def is_dangerous_rm_command(command):
     """
@@ -105,27 +124,38 @@ def main():
                 print("BLOCKED: Dangerous rm command detected and prevented", file=sys.stderr)
                 sys.exit(2)  # Exit code 2 blocks tool call and shows error to Claude
 
-        # Ensure log directory exists
-        log_dir = Path.cwd() / 'logs'
-        log_dir.mkdir(parents=True, exist_ok=True)
-        log_path = log_dir / 'pre_tool_use.json'
+        # Store data in MongoDB
+        try:
+            client = get_mongo_client()
+            db_name = get_database_name()
+            db = client[db_name]
+            collection = db['tool_use']
 
-        # Read existing log data or initialize empty list
-        if log_path.exists():
-            with open(log_path, 'r') as f:
-                try:
-                    log_data = json.load(f)
-                except (json.JSONDecodeError, ValueError):
-                    log_data = []
-        else:
-            log_data = []
+            # Create document with unique ID
+            doc_id = str(uuid.uuid4())
+            document = {
+                '_id': doc_id,
+                'tool_name': tool_name,
+                'tool_input': tool_input,
+                'timestamp_pre': datetime.utcnow(),
+                'session_id': input_data.get('session_id'),
+                'full_input': input_data,
+                'status': 'pre'
+            }
 
-        # Append new data
-        log_data.append(input_data)
+            collection.insert_one(document)
 
-        # Write back to file with formatting
-        with open(log_path, 'w') as f:
-            json.dump(log_data, f, indent=2)
+            # Store document ID in temp file for post_tool_use to find
+            temp_dir = Path.cwd() / '.claude_temp'
+            temp_dir.mkdir(parents=True, exist_ok=True)
+            id_file = temp_dir / 'last_tool_use_id.txt'
+            with open(id_file, 'w') as f:
+                f.write(doc_id)
+
+            client.close()
+        except Exception:
+            # Fail silently if MongoDB is not available
+            pass
 
         sys.exit(0)
 
