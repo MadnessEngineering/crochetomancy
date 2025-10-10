@@ -14,9 +14,11 @@ export CLAUDE_MONGO_URI="mongodb://localhost:27017/"
 If not set, it defaults to `mongodb://localhost:27017/` (local MongoDB instance).
 
 ### Database Name
-The database name is automatically generated from your project root path (`Path.cwd()`). For example:
+The database name is automatically generated from your project directory name. For example:
 - Path: `/Users/d.edens/lab/madness_interactive/Anathesmelt`
-- Database: `claude__Users_d_edens_lab_madness_interactive_Anathesmelt`
+- Database: `claudehooks_Anathesmelt`
+
+This keeps the database name short and compliant with MongoDB's 63-character limit.
 
 ## Collections
 
@@ -124,7 +126,7 @@ You can query the data using any MongoDB client or the `mongosh` shell:
 mongosh mongodb://localhost:27017/
 
 # Switch to your project database
-use claude__Users_d_edens_lab_madness_interactive_Anathesmelt
+use claudehooks_Anathesmelt
 
 # View all collections
 show collections

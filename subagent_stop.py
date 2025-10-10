@@ -29,12 +29,12 @@ def get_mongo_client():
     return MongoClient(mongo_uri)
 
 def get_database_name():
-    """Generate database name from project root path."""
-    # Use the project root path as database name, sanitized for MongoDB
-    root_path = str(Path.cwd()).replace('/', '_').replace('\\', '_').replace('.', '_')
-    # Remove leading underscores and limit length
-    db_name = root_path.lstrip('_')[:64]
-    return f"claude_{db_name}"
+    """Generate database name from project directory name."""
+    # Use just the project directory name (last part of path)
+    project_name = Path.cwd().name
+    # Sanitize for MongoDB (remove special chars)
+    safe_name = project_name.replace('.', '_').replace('-', '_')
+    return f"claudehooks_{safe_name}"
 
 
 def get_tts_script_path():
