@@ -13,6 +13,7 @@ import os
 import sys
 import random
 import subprocess
+import tempfile
 from pathlib import Path
 from datetime import datetime
 from pymongo import MongoClient
@@ -173,16 +174,123 @@ def announce_completion():
     #     pass
 
 
+def is_git_repository():
+    """Check if the current directory is a git repository."""
+    try:
+        subprocess.run(
+            ["git", "rev-parse", "--is-inside-work-tree"],
+            check=True,
+            capture_output=True,
+            text=True,
+            cwd=Path.cwd()
+        )
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return False
+
+def get_staged_diff():
+    """Get the staged git diff."""
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--cached"],
+            check=True,
+            capture_output=True,
+            text=True,
+            cwd=Path.cwd()
+        )
+        return result.stdout if result.stdout.strip() else None
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+
+def generate_commit_message_with_ollama(diff: str, model: str = "gpt-oss:20b") -> str | None:
+    """Generate a commit message using Ollama."""
+    prompt = f"""Generate a raw text commit message for the following diff.
+Keep commit message concise and to the point.
+Make the first line the title (100 characters max) and the rest the body:
+{diff}
+"""
+    try:
+        process = subprocess.Popen(
+            ["ollama", "run", model],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            cwd=Path.cwd()
+        )
+        stdout, _ = process.communicate(input=prompt, timeout=60)
+
+        if process.returncode == 0 and stdout.strip():
+            return stdout.strip()
+        return None
+    except (FileNotFoundError, subprocess.TimeoutExpired, subprocess.SubprocessError):
+        return None
+
+def clean_commit_message(message: str) -> str:
+    """Clean the generated commit message from LLM thinking artifacts."""
+    start_index = message.find('**')
+    if start_index != -1:
+        return message[start_index:].strip()
+
+    done_thinking_variants = ["done thinking.", "done thinking", "```"]
+    for variant in done_thinking_variants:
+        if variant in message:
+            parts = message.split(variant, 1)
+            if len(parts) > 1 and parts[1].strip():
+                return parts[1].strip()
+
+    return message
+
+
 def main():
     try:
         # Parse command line arguments
         parser = argparse.ArgumentParser()
         parser.add_argument('--chat', action='store_true', help='Copy transcript to chat.json')
         parser.add_argument('--notify', action='store_true', help='Enable TTS completion announcement')
+        parser.add_argument('--autocommit', action='store_true', help='Automatically commit staged changes with a generated message.')
+        parser.add_argument('--commit-template', action='store_true', help='Generate a commit message and set it as a template for the next commit.')
         args = parser.parse_args()
 
         # Read JSON input from stdin
         input_data = json.load(sys.stdin)
+
+        # Handle git operations
+        if (args.autocommit or args.commit_template) and is_git_repository():
+            diff = get_staged_diff()
+            if diff:
+                commit_message = generate_commit_message_with_ollama(diff)
+                if commit_message:
+                    cleaned_message = clean_commit_message(commit_message)
+
+                    if args.autocommit:
+                        try:
+                            subprocess.run(
+                                ["git", "commit", "-m", cleaned_message],
+                                check=True,
+                                capture_output=True,
+                                text=True,
+                                cwd=Path.cwd()
+                            )
+                        except subprocess.CalledProcessError:
+                            pass
+                    elif args.commit_template:
+                        try:
+                            git_dir_result = subprocess.run(['git', 'rev-parse', '--git-dir'], capture_output=True, text=True, check=True, cwd=Path.cwd())
+                            git_dir = git_dir_result.stdout.strip()
+                            template_path = os.path.join(git_dir, "claude_commit_template.txt")
+                            with open(template_path, 'w') as f:
+                                f.write(cleaned_message)
+
+                            subprocess.run(
+                                ["git", "config", "commit.template", template_path],
+                                check=True,
+                                cwd=Path.cwd()
+                            )
+                            print("Commit message template set. Run 'git commit' to use it.")
+                            print(f"To unset, run: git config --unset commit.template")
+                        except (subprocess.CalledProcessError, IOError):
+                            pass
 
         # Extract required fields
         session_id = input_data.get("session_id", "")
