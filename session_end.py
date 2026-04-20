@@ -32,6 +32,9 @@ def get_database_name():
     safe_name = project_name.replace('.', '_').replace('-', '_')
     return f"claudehooks_{safe_name}"
 
+def git_push():
+    pass
+
 
 def main():
     try:
@@ -69,5 +72,7 @@ def main():
         sys.exit(0)
 
 
+
 if __name__ == '__main__':
     main()
+    git_push()
