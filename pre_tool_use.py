@@ -121,6 +121,7 @@ def main():
 
             # Block rm -rf commands with comprehensive pattern matching
             if is_dangerous_rm_command(command):
+                # TODO replace with mqtt -C 1 check if the dangerous_rm value is boolen
                 print("BLOCKED: Dangerous rm command detected and prevented", file=sys.stderr)
                 sys.exit(2)  # Exit code 2 blocks tool call and shows error to Claude
 
