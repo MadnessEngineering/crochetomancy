@@ -18,6 +18,11 @@ from datetime import datetime
 from pymongo import MongoClient
 
 from dvttestkit.testKitUtils import post
+try:
+    from dvttestkit.testKitUtils import get as _mqtt_get
+    _MQTT_GET_AVAILABLE = True
+except ImportError:
+    _MQTT_GET_AVAILABLE = False
 
 try:
     from dotenv import load_dotenv
@@ -33,11 +38,46 @@ DEVICE_NAME = os.getenv("DeNa", "macbook")
 SESSION_CONTEXT_TOPIC = f"status/{DEVICE_NAME}/claude/session/context"
 GIT_CONTEXT_TOPIC = f"status/{DEVICE_NAME}/claude/git/context"
 
+# ── feature flags ──────────────────────────────────────────────────────────
+_HOOKS_CFG = Path.home() / '.claude' / 'hooks_config.json'
+_HOOKS_CFG_TOPIC = f"status/{DEVICE_NAME}/claude/hooks_config"
+_HOOKS_CFG_DEFAULTS = {
+    "activity_heartbeat": True, "context_injection": True,
+    "task_sync": True, "mongo_logging": True, "autocommit": True,
+    "notification_mqtt": True, "session_mqtt": True, "subagent_mqtt": True,
+    "compact_mqtt": True, "permission_mqtt": True,
+    "teammate_idle_mqtt": True, "stop_mqtt": True,
+}
+
+def _cfg(key: str, default: bool = True) -> bool:
+    try:
+        return json.loads(_HOOKS_CFG.read_text()).get(key, default) if _HOOKS_CFG.exists() else default
+    except Exception:
+        return default
+
+def refresh_hooks_config():
+    """Pull retained MQTT config → write ~/.claude/hooks_config.json.
+    Session start is the natural refresh point; all hook reads then hit the file."""
+    try:
+        if _MQTT_GET_AVAILABLE:
+            raw = _mqtt_get(topic=_HOOKS_CFG_TOPIC)
+            if raw:
+                incoming = json.loads(raw) if isinstance(raw, str) else raw
+                merged = {**_HOOKS_CFG_DEFAULTS, **incoming}
+                _HOOKS_CFG.write_text(json.dumps(merged, indent=2))
+                return
+    except Exception:
+        pass
+    # No MQTT or parse error — write defaults if file missing
+    if not _HOOKS_CFG.exists():
+        _HOOKS_CFG.write_text(json.dumps(_HOOKS_CFG_DEFAULTS, indent=2))
+# ───────────────────────────────────────────────────────────────────────────
+
 
 def get_mongo_client():
     """Get MongoDB client with configurable URI."""
     mongo_uri = os.getenv('CLAUDE_MONGO_URI', 'mongodb://localhost:27017/')
-    return MongoClient(mongo_uri)
+    return MongoClient(mongo_uri, serverSelectionTimeoutMS=500, socketTimeoutMS=1000)
 
 def get_database_name():
     """Generate database name from project directory name."""
@@ -375,9 +415,15 @@ def main():
         # Extract fields
         session_id = input_data.get('session_id', 'unknown')
         source = input_data.get('source', 'unknown')  # "startup", "resume", or "clear"
-        post(f"{os.getenv('DeNa')}", input_data, True)
+
+        # Refresh feature-flag cache from MQTT retained config — all hooks read the file
+        refresh_hooks_config()
+
+        if _cfg('session_mqtt'):
+            post(f"{os.getenv('DeNa')}", input_data, True)
         # Log the session start event
-        log_session_start(input_data)
+        if _cfg('mongo_logging'):
+            log_session_start(input_data)
 
         # Emit compact startup context so the model can act immediately on todo sessions.
         additional_context = build_todo_context(session_id, source)

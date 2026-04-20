@@ -27,10 +27,19 @@ except ImportError:
     pass  # dotenv is optional
 
 
+# ── feature flags ──────────────────────────────────────────────────────────
+_HOOKS_CFG = Path.home() / '.claude' / 'hooks_config.json'
+def _cfg(key: str, default: bool = True) -> bool:
+    try:
+        return json.loads(_HOOKS_CFG.read_text()).get(key, default) if _HOOKS_CFG.exists() else default
+    except Exception:
+        return default
+# ───────────────────────────────────────────────────────────────────────────
+
 def get_mongo_client():
     """Get MongoDB client with configurable URI."""
     mongo_uri = os.getenv('CLAUDE_MONGO_URI', 'mongodb://localhost:27017/')
-    return MongoClient(mongo_uri)
+    return MongoClient(mongo_uri, serverSelectionTimeoutMS=500, socketTimeoutMS=1000)
 
 def get_database_name():
     """Generate database name from project directory name."""
@@ -256,7 +265,7 @@ def main():
         input_data = json.load(sys.stdin)
 
         # Handle git operations
-        if (args.autocommit or args.commit_template) and is_git_repository():
+        if (args.autocommit or args.commit_template) and _cfg('autocommit') and is_git_repository():
             diff = get_staged_diff()
             if diff:
                 commit_message = generate_commit_message_with_ollama(diff)
@@ -297,7 +306,8 @@ def main():
         stop_hook_active = input_data.get("stop_hook_active", False)
 
         # Store data in MongoDB
-        try:
+        if _cfg('mongo_logging'):
+          try:
             client = get_mongo_client()
             db_name = get_database_name()
             db = client[db_name]
@@ -312,7 +322,7 @@ def main():
 
             collection.insert_one(document)
             client.close()
-        except Exception:
+          except Exception:
             # Fail silently if MongoDB is not available
             pass
 
@@ -355,7 +365,7 @@ def main():
                     pass  # Fail silently
 
         # Announce completion via TTS (only if --notify flag is set)
-        if args.notify:
+        if args.notify and _cfg('stop_mqtt'):
             announce_completion()
 
         sys.exit(0)

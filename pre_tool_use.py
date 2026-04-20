@@ -21,10 +21,19 @@ try:
 except ImportError:
     _MQTT_AVAILABLE = False
 
+# ── feature flags ──────────────────────────────────────────────────────────
+_HOOKS_CFG = Path.home() / '.claude' / 'hooks_config.json'
+def _cfg(key: str, default: bool = True) -> bool:
+    try:
+        return json.loads(_HOOKS_CFG.read_text()).get(key, default) if _HOOKS_CFG.exists() else default
+    except Exception:
+        return default
+# ───────────────────────────────────────────────────────────────────────────
+
 def get_mongo_client():
     """Get MongoDB client with configurable URI."""
     mongo_uri = os.getenv('CLAUDE_MONGO_URI', 'mongodb://localhost:27017/')
-    return MongoClient(mongo_uri)
+    return MongoClient(mongo_uri, serverSelectionTimeoutMS=500, socketTimeoutMS=1000)
 
 def get_database_name():
     """Generate database name from project directory name."""
@@ -132,7 +141,7 @@ def main():
                 sys.exit(2)  # Exit code 2 blocks tool call and shows error to Claude
 
         # MQTT activity heartbeat — SwarmDesk live feed
-        if _MQTT_AVAILABLE:
+        if _MQTT_AVAILABLE and _cfg('activity_heartbeat'):
             try:
                 # Extract the most meaningful target for this tool call
                 target = ''
@@ -160,6 +169,8 @@ def main():
                 pass
 
         # Store data in MongoDB
+        if not _cfg('mongo_logging'):
+            sys.exit(0)
         try:
             client = get_mongo_client()
             db_name = get_database_name()

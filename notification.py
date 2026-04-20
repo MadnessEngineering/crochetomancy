@@ -25,10 +25,19 @@ except ImportError:
     pass  # dotenv is optional
 
 
+# ── feature flags ──────────────────────────────────────────────────────────
+_HOOKS_CFG = Path.home() / '.claude' / 'hooks_config.json'
+def _cfg(key: str, default: bool = True) -> bool:
+    try:
+        return json.loads(_HOOKS_CFG.read_text()).get(key, default) if _HOOKS_CFG.exists() else default
+    except Exception:
+        return default
+# ───────────────────────────────────────────────────────────────────────────
+
 def get_mongo_client():
     """Get MongoDB client with configurable URI."""
     mongo_uri = os.getenv('CLAUDE_MONGO_URI', 'mongodb://localhost:27017/')
-    return MongoClient(mongo_uri)
+    return MongoClient(mongo_uri, serverSelectionTimeoutMS=500, socketTimeoutMS=1000)
 
 def get_database_name():
     """Generate database name from project directory name."""
@@ -114,26 +123,27 @@ def main():
         input_data = json.loads(sys.stdin.read())
 
         # Store data in MongoDB
-        try:
-            client = get_mongo_client()
-            db_name = get_database_name()
-            db = client[db_name]
-            collection = db['notification']
+        if _cfg('mongo_logging'):
+            try:
+                client = get_mongo_client()
+                db_name = get_database_name()
+                db = client[db_name]
+                collection = db['notification']
 
-            document = {
-                'message': input_data.get('message'),
-                'timestamp': datetime.utcnow(),
-                'full_data': input_data
-            }
+                document = {
+                    'message': input_data.get('message'),
+                    'timestamp': datetime.utcnow(),
+                    'full_data': input_data
+                }
 
-            collection.insert_one(document)
-            client.close()
-        except Exception:
-            # Fail silently if MongoDB is not available
-            pass
+                collection.insert_one(document)
+                client.close()
+            except Exception:
+                pass
 
         # Post to MQTT
-        _post(topic="status/claude/notification", payload=str(json.dumps(input_data)), retain=False)
+        if _cfg('notification_mqtt'):
+            _post(topic="status/claude/notification", payload=str(json.dumps(input_data)), retain=False)
 
         # Announce notification via TTS only if --notify flag is set
         # Skip TTS for the generic "Claude is waiting for your input" message

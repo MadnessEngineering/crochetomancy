@@ -28,6 +28,15 @@ _PROJECT_NAMES = {
     'madness_interactive', 'chrome-devtools-mcp', 'lab',
 }
 
+# ── feature flags ──────────────────────────────────────────────────────────
+_HOOKS_CFG = Path.home() / '.claude' / 'hooks_config.json'
+def _cfg(key: str, default: bool = True) -> bool:
+    try:
+        return json.loads(_HOOKS_CFG.read_text()).get(key, default) if _HOOKS_CFG.exists() else default
+    except Exception:
+        return default
+# ───────────────────────────────────────────────────────────────────────────
+
 def detect_project():
     """Derive Omnispindle project name from current working directory."""
     parts = [p.lower().replace('-', '_') for p in Path.cwd().parts]
@@ -219,7 +228,8 @@ def main():
         prompt = input_data.get('prompt', '')
 
         # Log the user prompt
-        log_user_prompt(session_id, input_data)
+        if _cfg('mongo_logging'):
+            log_user_prompt(session_id, input_data)
 
         # Manage session data with JSON structure
         if args.store_last_prompt or args.name_agent:
@@ -234,7 +244,7 @@ def main():
                 sys.exit(2)
 
         # Inject Omnispindle context into the prompt if requested
-        if args.inject_context:
+        if args.inject_context and _cfg('context_injection'):
             project = detect_project()
             context = fetch_omnispindle_context(project)
             if context:
