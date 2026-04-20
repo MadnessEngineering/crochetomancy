@@ -47,6 +47,7 @@ _HOOKS_CFG_DEFAULTS = {
     "notification_mqtt": True, "session_mqtt": True, "subagent_mqtt": True,
     "compact_mqtt": True, "permission_mqtt": True,
     "teammate_idle_mqtt": True, "stop_mqtt": True,
+    "auto_pull_main": True,
 }
 
 def _cfg(key: str, default: bool = True) -> bool:
@@ -202,6 +203,28 @@ def load_development_context(source):
         context_parts.append(issues)
 
     return "\n".join(context_parts)
+
+
+def maybe_pull_main():
+    """Auto-pull if on main/master. Mirrors the post-checkout git hook for existing repos."""
+    try:
+        branch_result = subprocess.run(
+            ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
+            capture_output=True, text=True, timeout=3
+        )
+        if branch_result.returncode != 0:
+            return
+        branch = branch_result.stdout.strip()
+        if branch in ('main', 'master'):
+            result = subprocess.run(
+                ['git', 'pull', '--ff-only'],
+                capture_output=True, text=True, timeout=15
+            )
+            if result.returncode != 0:
+                # Diverged or no remote — don't block session, just skip
+                pass
+    except Exception:
+        pass
 
 
 def is_probable_todo_id(session_id):
@@ -418,6 +441,10 @@ def main():
 
         # Refresh feature-flag cache from MQTT retained config — all hooks read the file
         refresh_hooks_config()
+
+        # Auto-pull if on main/master (covers existing repos; new repos get the post-checkout git hook)
+        if _cfg('auto_pull_main'):
+            maybe_pull_main()
 
         if _cfg('session_mqtt'):
             post(f"{os.getenv('DeNa')}", input_data, True)
