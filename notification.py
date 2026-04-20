@@ -70,7 +70,8 @@ def get_tts_script_path():
 
 def announce_notification():
     """Announce that the agent needs user input."""
-    _post(topic="status/device_name/claude/notification", payload="notification", retain=False)
+    pass
+    # _post(topic="status/device_name/claude/notification", payload="notification", retain=False)
 
     # try:
     #     tts_script = get_tts_script_path()
@@ -132,7 +133,7 @@ def main():
             pass
 
         # Post to MQTT
-        _post(topic="status/device_name/claude/notification", payload=str(json.dumps(input_data)), retain=False)
+        _post(topic="status/claude/notification", payload=str(json.dumps(input_data)), retain=False)
 
         # Announce notification via TTS only if --notify flag is set
         # Skip TTS for the generic "Claude is waiting for your input" message

@@ -10,6 +10,7 @@
 import argparse
 import json
 import os
+import re
 import sys
 import subprocess
 from pathlib import Path
@@ -23,6 +24,14 @@ try:
     load_dotenv()
 except ImportError:
     pass  # dotenv is optional
+
+UUID_PATTERN = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
+)
+MQTT_HOST = os.getenv("MADNESS_MQTT_HOST", "localhost")
+DEVICE_NAME = os.getenv("DeNa", "macbook")
+SESSION_CONTEXT_TOPIC = f"status/{DEVICE_NAME}/claude/session/context"
+GIT_CONTEXT_TOPIC = f"status/{DEVICE_NAME}/claude/git/context"
 
 
 def get_mongo_client():
@@ -155,6 +164,201 @@ def load_development_context(source):
     return "\n".join(context_parts)
 
 
+def is_probable_todo_id(session_id):
+    """Heuristic: todo launcher passes UUID as session_id."""
+    if not session_id or not isinstance(session_id, str):
+        return False
+    return bool(UUID_PATTERN.match(session_id.strip()))
+
+
+def as_text(value):
+    """Convert scalar/list values to compact text."""
+    if value is None:
+        return ""
+    if isinstance(value, list):
+        return ", ".join([str(item) for item in value if item is not None]).strip()
+    return str(value).strip()
+
+
+def first_value(document, keys):
+    """Return first non-empty value from a list of potential keys."""
+    for key in keys:
+        value = document.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        if value not in (None, "", []):
+            return value
+    return None
+
+
+def slugify(text):
+    """Build a safe slug for branch naming hints."""
+    cleaned = re.sub(r"[^a-zA-Z0-9]+", "-", (text or "").lower()).strip("-")
+    return cleaned[:40] if cleaned else "work"
+
+
+def find_todo_by_id(todo_id):
+    """
+    Best-effort lookup for todo metadata from Mongo.
+    We intentionally fail soft if no matching database/collection is available.
+    """
+    client = None
+    try:
+        client = get_mongo_client()
+        preferred = [name for name in [
+            os.getenv("OMNISPINDLE_DB"),
+            os.getenv("OMNISPINDLE_DB_NAME"),
+            "omnispindle",
+            "omnispindle_prod",
+        ] if name]
+        all_dbs = [name for name in client.list_database_names() if "omni" in name.lower()]
+        db_candidates = []
+        for name in preferred + all_dbs:
+            if name not in db_candidates:
+                db_candidates.append(name)
+
+        for db_name in db_candidates:
+            db = client[db_name]
+            collection_names = [c for c in db.list_collection_names() if "todo" in c.lower()]
+            for collection_name in collection_names:
+                collection = db[collection_name]
+                query = {
+                    "$or": [
+                        {"id": todo_id},
+                        {"todo_id": todo_id},
+                        {"uuid": todo_id},
+                        {"_id": todo_id},
+                    ]
+                }
+                document = collection.find_one(query)
+                if document:
+                    document["_source_db"] = db_name
+                    document["_source_collection"] = collection_name
+                    return document
+    except Exception:
+        return None
+    finally:
+        if client:
+            try:
+                client.close()
+            except Exception:
+                pass
+    return None
+
+
+def build_todo_context(session_id, source):
+    """Build SessionStart additionalContext with todo-aware hints."""
+    parts = [
+        f"Session source: {source}",
+    ]
+    branch, _changes = get_git_status()
+    if branch:
+        parts.append(f"Current branch: {branch}")
+
+    if not is_probable_todo_id(session_id):
+        return "\n".join(parts)
+
+    parts.append(f"Session ID looks like a todo ID: {session_id}")
+    todo = find_todo_by_id(session_id)
+    if not todo:
+        parts.append(
+            f"Startup hint: call `get_todo` with todo_id `{session_id}` before planning work."
+        )
+        return "\n".join(parts)
+
+    title = as_text(first_value(todo, ["description", "title", "name", "task"]))
+    status = as_text(first_value(todo, ["status", "state"]))
+    project = as_text(first_value(todo, ["project"]))
+    priority = as_text(first_value(todo, ["priority"]))
+    tags = as_text(first_value(todo, ["tags", "labels"]))
+    ticket = as_text(first_value(todo, ["ticket", "issue", "issue_id"]))
+
+    parts.append("Todo context (preloaded from Mongo):")
+    if title:
+        parts.append(f"- Title: {title}")
+    if status:
+        parts.append(f"- Status: {status}")
+    if project:
+        parts.append(f"- Project: {project}")
+    if priority:
+        parts.append(f"- Priority: {priority}")
+    if tags:
+        parts.append(f"- Tags: {tags}")
+    if ticket:
+        parts.append(f"- Ticket: {ticket}")
+
+    short_id = session_id.split("-")[0]
+    title_slug = slugify(title)
+    parts.append(f"Naming hint: branch `todo/{session_id}-{title_slug}`")
+    parts.append(f"Commit hint: prefix commit subject with `{session_id}` for traceability.")
+    parts.append(
+        f"Trace source: {todo.get('_source_db', 'unknown')}.{todo.get('_source_collection', 'unknown')}"
+    )
+    return "\n".join(parts)
+
+
+def build_git_context_payload(session_id, source):
+    """Build lightweight state for git hooks and other agents."""
+    branch, changes = get_git_status()
+    payload = {
+        "session_id": session_id,
+        "source": source,
+        "cwd": str(Path.cwd()),
+        "updated_at": datetime.utcnow().isoformat() + "Z",
+        "branch": branch or "",
+        "uncommitted_files": int(changes or 0),
+        "active_todo_id": "",
+        "todo_short_id": "",
+        "todo_title": "",
+        "suggested_branch": "",
+        "commit_prefix": "",
+    }
+
+    if is_probable_todo_id(session_id):
+        payload["active_todo_id"] = session_id
+        payload["todo_short_id"] = session_id.split("-")[0]
+        payload["commit_prefix"] = session_id
+        todo = find_todo_by_id(session_id)
+        if todo:
+            title = as_text(first_value(todo, ["description", "title", "name", "task"]))
+            payload["todo_title"] = title
+            payload["suggested_branch"] = f"todo/{session_id}-{slugify(title)}"
+    return payload
+
+
+def publish_retained_topic(topic, payload):
+    """Publish retained MQTT payload. Fails silently."""
+    try:
+        subprocess.run(
+            ["mosquitto_pub", "-h", MQTT_HOST, "-t", topic, "-m", json.dumps(payload), "-r"],
+            capture_output=True,
+            timeout=3,
+            text=True,
+        )
+    except Exception:
+        pass
+
+
+def save_git_context_file(payload):
+    """Persist local context fallback for git hooks."""
+    try:
+        git_dir_result = subprocess.run(
+            ["git", "rev-parse", "--git-dir"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        if git_dir_result.returncode != 0:
+            return
+        git_dir = Path(git_dir_result.stdout.strip())
+        if not git_dir.is_absolute():
+            git_dir = Path.cwd() / git_dir
+        state_path = git_dir / "claude-session-context.json"
+        state_path.write_text(json.dumps(payload), encoding="utf-8")
+    except Exception:
+        pass
+
+
 def main():
     try:
         # Parse command line arguments
@@ -163,7 +367,7 @@ def main():
                           help='Load development context at session start')
         parser.add_argument('--announce', action='store_true',
                           help='Announce session start via TTS')
-        args = parser.parse_args()
+        _args = parser.parse_args()
 
         # Read JSON input from stdin
         input_data = json.loads(sys.stdin.read())
@@ -171,14 +375,24 @@ def main():
         # Extract fields
         session_id = input_data.get('session_id', 'unknown')
         source = input_data.get('source', 'unknown')  # "startup", "resume", or "clear"
-        post(f"{os.getenv("DeNa")}", input_data, True)
+        post(f"{os.getenv('DeNa')}", input_data, True)
         # Log the session start event
         log_session_start(input_data)
 
-
-
-        # TODO Check if session_id is an existing Todo Item
-        pass
+        # Emit compact startup context so the model can act immediately on todo sessions.
+        additional_context = build_todo_context(session_id, source)
+        git_context_payload = build_git_context_payload(session_id, source)
+        publish_retained_topic(SESSION_CONTEXT_TOPIC, git_context_payload)
+        publish_retained_topic(GIT_CONTEXT_TOPIC, git_context_payload)
+        save_git_context_file(git_context_payload)
+        if additional_context:
+            output = {
+                "hookSpecificOutput": {
+                    "hookEventName": "SessionStart",
+                    "additionalContext": additional_context
+                }
+            }
+            print(json.dumps(output))
 
         # Load development context if requested
         # if args.load_context:
