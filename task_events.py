@@ -33,12 +33,21 @@ except ImportError:
 
 def get_mongo_client():
     mongo_uri = os.getenv('CLAUDE_MONGO_URI', 'mongodb://localhost:27017/')
-    return MongoClient(mongo_uri)
+    return MongoClient(mongo_uri, serverSelectionTimeoutMS=500, socketTimeoutMS=1000)
 
 def get_database_name():
     project_name = Path.cwd().name
     safe_name = project_name.replace('.', '_').replace('-', '_')
     return f"claudehooks_{safe_name}"
+
+# ── feature flags ──────────────────────────────────────────────────────────
+_HOOKS_CFG = Path.home() / '.claude' / 'hooks_config.json'
+def _cfg(key: str, default: bool = True) -> bool:
+    try:
+        return json.loads(_HOOKS_CFG.read_text()).get(key, default) if _HOOKS_CFG.exists() else default
+    except Exception:
+        return default
+# ───────────────────────────────────────────────────────────────────────────
 
 _PROJECT_NAMES = {
     'omnispindle', 'inventorium', 'anathesmelt', 'swarmdesk',
@@ -107,22 +116,23 @@ def main():
         description = input_data.get('description', '')
 
         # Log to MongoDB
-        try:
-            client = get_mongo_client()
-            db = client[get_database_name()]
-            collection_name = f"task_{args.event}"
-            db[collection_name].insert_one({
-                'session_id': session_id,
-                'task_id': task_id,
-                'title': title,
-                'description': description,
-                'event': args.event,
-                'timestamp': datetime.utcnow(),
-                'full_data': input_data
-            })
-            client.close()
-        except Exception:
-            pass
+        if _cfg('mongo_logging'):
+            try:
+                client = get_mongo_client()
+                db = client[get_database_name()]
+                collection_name = f"task_{args.event}"
+                db[collection_name].insert_one({
+                    'session_id': session_id,
+                    'task_id': task_id,
+                    'title': title,
+                    'description': description,
+                    'event': args.event,
+                    'timestamp': datetime.utcnow(),
+                    'full_data': input_data
+                })
+                client.close()
+            except Exception:
+                pass
 
         # MQTT — broadcast task lifecycle on a hierarchical topic
         # Subscribe to status/device_name/claude/task/# for all task events
@@ -144,7 +154,8 @@ def main():
         )
 
         # Mirror into Omnispindle swarmonomicon todos
-        mirror_to_omnispindle(task_id, title, description, session_id, args.event)
+        if _cfg('task_sync'):
+            mirror_to_omnispindle(task_id, title, description, session_id, args.event)
 
         sys.exit(0)
 

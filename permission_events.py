@@ -29,12 +29,21 @@ except ImportError:
 
 def get_mongo_client():
     mongo_uri = os.getenv('CLAUDE_MONGO_URI', 'mongodb://localhost:27017/')
-    return MongoClient(mongo_uri)
+    return MongoClient(mongo_uri, serverSelectionTimeoutMS=500, socketTimeoutMS=1000)
 
 def get_database_name():
     project_name = Path.cwd().name
     safe_name = project_name.replace('.', '_').replace('-', '_')
     return f"claudehooks_{safe_name}"
+
+# ── feature flags ──────────────────────────────────────────────────────────
+_HOOKS_CFG = Path.home() / '.claude' / 'hooks_config.json'
+def _cfg(key: str, default: bool = True) -> bool:
+    try:
+        return json.loads(_HOOKS_CFG.read_text()).get(key, default) if _HOOKS_CFG.exists() else default
+    except Exception:
+        return default
+# ───────────────────────────────────────────────────────────────────────────
 
 
 def main():
@@ -51,34 +60,36 @@ def main():
         reason = input_data.get('reason', '')
 
         # Log to MongoDB
-        try:
-            client = get_mongo_client()
-            db = client[get_database_name()]
-            db[f"permission_{args.event}"].insert_one({
-                'session_id': session_id,
-                'tool_name': tool_name,
-                'reason': reason,
-                'event': args.event,
-                'timestamp': datetime.utcnow(),
-                'full_data': input_data
-            })
-            client.close()
-        except Exception:
-            pass
+        if _cfg('mongo_logging'):
+            try:
+                client = get_mongo_client()
+                db = client[get_database_name()]
+                db[f"permission_{args.event}"].insert_one({
+                    'session_id': session_id,
+                    'tool_name': tool_name,
+                    'reason': reason,
+                    'event': args.event,
+                    'timestamp': datetime.utcnow(),
+                    'full_data': input_data
+                })
+                client.close()
+            except Exception:
+                pass
 
         # MQTT — permission denied is especially useful to surface in dashboards
-        post(
-            topic=f"status/device_name/claude/permission/{args.event}",
-            payload=json.dumps({
-                'session_id': session_id,
-                'tool_name': tool_name,
-                'reason': reason,
-                'event': args.event,
-                'cwd': str(Path.cwd()),
-                'timestamp': datetime.utcnow().isoformat()
-            }),
-            retain=False
-        )
+        if _cfg('permission_mqtt'):
+            post(
+                topic=f"status/device_name/claude/permission/{args.event}",
+                payload=json.dumps({
+                    'session_id': session_id,
+                    'tool_name': tool_name,
+                    'reason': reason,
+                    'event': args.event,
+                    'cwd': str(Path.cwd()),
+                    'timestamp': datetime.utcnow().isoformat()
+                }),
+                retain=False
+            )
 
         sys.exit(0)
 

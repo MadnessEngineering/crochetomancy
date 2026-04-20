@@ -25,12 +25,21 @@ except ImportError:
 
 def get_mongo_client():
     mongo_uri = os.getenv('CLAUDE_MONGO_URI', 'mongodb://localhost:27017/')
-    return MongoClient(mongo_uri)
+    return MongoClient(mongo_uri, serverSelectionTimeoutMS=500, socketTimeoutMS=1000)
 
 def get_database_name():
     project_name = Path.cwd().name
     safe_name = project_name.replace('.', '_').replace('-', '_')
     return f"claudehooks_{safe_name}"
+
+# ── feature flags ──────────────────────────────────────────────────────────
+_HOOKS_CFG = Path.home() / '.claude' / 'hooks_config.json'
+def _cfg(key: str, default: bool = True) -> bool:
+    try:
+        return json.loads(_HOOKS_CFG.read_text()).get(key, default) if _HOOKS_CFG.exists() else default
+    except Exception:
+        return default
+# ───────────────────────────────────────────────────────────────────────────
 
 
 def main():
@@ -43,33 +52,35 @@ def main():
         session_id = input_data.get('session_id', '')
 
         # Log to MongoDB — tool failures are useful for debugging patterns
-        try:
-            client = get_mongo_client()
-            db = client[get_database_name()]
-            db['tool_failures'].insert_one({
-                'session_id': session_id,
-                'tool_name': tool_name,
-                'error': error,
-                'tool_input': tool_input,
-                'timestamp': datetime.utcnow(),
-                'full_data': input_data
-            })
-            client.close()
-        except Exception:
-            pass
+        if _cfg('mongo_logging'):
+            try:
+                client = get_mongo_client()
+                db = client[get_database_name()]
+                db['tool_failures'].insert_one({
+                    'session_id': session_id,
+                    'tool_name': tool_name,
+                    'error': error,
+                    'tool_input': tool_input,
+                    'timestamp': datetime.utcnow(),
+                    'full_data': input_data
+                })
+                client.close()
+            except Exception:
+                pass
 
         # MQTT — visibility into tool failures across the swarm dashboard
-        post(
-            topic="status/device_name/claude/tool_failure",
-            payload=json.dumps({
-                'session_id': session_id,
-                'tool_name': tool_name,
-                'error': str(error)[:500],  # truncate long errors
-                'cwd': str(Path.cwd()),
-                'timestamp': datetime.utcnow().isoformat()
-            }),
-            retain=False
-        )
+        if _cfg('notification_mqtt'):
+            post(
+                topic="status/device_name/claude/tool_failure",
+                payload=json.dumps({
+                    'session_id': session_id,
+                    'tool_name': tool_name,
+                    'error': str(error)[:500],  # truncate long errors
+                    'cwd': str(Path.cwd()),
+                    'timestamp': datetime.utcnow().isoformat()
+                }),
+                retain=False
+            )
 
         sys.exit(0)
 

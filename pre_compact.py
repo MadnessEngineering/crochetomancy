@@ -25,7 +25,7 @@ except ImportError:
 def get_mongo_client():
     """Get MongoDB client with configurable URI."""
     mongo_uri = os.getenv('CLAUDE_MONGO_URI', 'mongodb://localhost:27017/')
-    return MongoClient(mongo_uri)
+    return MongoClient(mongo_uri, serverSelectionTimeoutMS=500, socketTimeoutMS=1000)
 
 def get_database_name():
     """Generate database name from project directory name."""
@@ -35,28 +35,38 @@ def get_database_name():
     safe_name = project_name.replace('.', '_').replace('-', '_')
     return f"claudehooks_{safe_name}"
 
+# ── feature flags ──────────────────────────────────────────────────────────
+_HOOKS_CFG = Path.home() / '.claude' / 'hooks_config.json'
+def _cfg(key: str, default: bool = True) -> bool:
+    try:
+        return json.loads(_HOOKS_CFG.read_text()).get(key, default) if _HOOKS_CFG.exists() else default
+    except Exception:
+        return default
+# ───────────────────────────────────────────────────────────────────────────
+
 def log_pre_compact(input_data):
     """Log pre-compact event to MongoDB."""
-    try:
-        client = get_mongo_client()
-        db_name = get_database_name()
-        db = client[db_name]
-        collection = db['pre_compact']
+    if _cfg('mongo_logging'):
+        try:
+            client = get_mongo_client()
+            db_name = get_database_name()
+            db = client[db_name]
+            collection = db['pre_compact']
 
-        document = {
-            'session_id': input_data.get('session_id'),
-            'trigger': input_data.get('trigger'),
-            'transcript_path': input_data.get('transcript_path'),
-            'custom_instructions': input_data.get('custom_instructions'),
-            'timestamp': datetime.utcnow(),
-            'full_data': input_data
-        }
+            document = {
+                'session_id': input_data.get('session_id'),
+                'trigger': input_data.get('trigger'),
+                'transcript_path': input_data.get('transcript_path'),
+                'custom_instructions': input_data.get('custom_instructions'),
+                'timestamp': datetime.utcnow(),
+                'full_data': input_data
+            }
 
-        collection.insert_one(document)
-        client.close()
-    except Exception:
-        # Fail silently if MongoDB is not available
-        pass
+            collection.insert_one(document)
+            client.close()
+        except Exception:
+            # Fail silently if MongoDB is not available
+            pass
 
 
 def backup_transcript(transcript_path, trigger):

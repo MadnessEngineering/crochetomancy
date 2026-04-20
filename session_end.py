@@ -31,12 +31,21 @@ GIT_CONTEXT_TOPIC = f"status/{DEVICE_NAME}/claude/git/context"
 
 def get_mongo_client():
     mongo_uri = os.getenv('CLAUDE_MONGO_URI', 'mongodb://localhost:27017/')
-    return MongoClient(mongo_uri)
+    return MongoClient(mongo_uri, serverSelectionTimeoutMS=500, socketTimeoutMS=1000)
 
 def get_database_name():
     project_name = Path.cwd().name
     safe_name = project_name.replace('.', '_').replace('-', '_')
     return f"claudehooks_{safe_name}"
+
+# ── feature flags ──────────────────────────────────────────────────────────
+_HOOKS_CFG = Path.home() / '.claude' / 'hooks_config.json'
+def _cfg(key: str, default: bool = True) -> bool:
+    try:
+        return json.loads(_HOOKS_CFG.read_text()).get(key, default) if _HOOKS_CFG.exists() else default
+    except Exception:
+        return default
+# ───────────────────────────────────────────────────────────────────────────
 
 def git_push():
     pass
@@ -95,28 +104,30 @@ def main():
         }
 
         # Log to MongoDB
-        try:
-            client = get_mongo_client()
-            db = client[get_database_name()]
-            db['session_end'].insert_one({
-                'session_id': session_id,
-                'timestamp': datetime.utcnow(),
-                'full_data': input_data
-            })
-            client.close()
-        except Exception:
-            pass
+        if _cfg('mongo_logging'):
+            try:
+                client = get_mongo_client()
+                db = client[get_database_name()]
+                db['session_end'].insert_one({
+                    'session_id': session_id,
+                    'timestamp': datetime.utcnow(),
+                    'full_data': input_data
+                })
+                client.close()
+            except Exception:
+                pass
 
         # MQTT — SessionEnd complements SessionStart for full lifecycle tracking
-        post(
-            topic="status/device_name/claude/session_end",
-            payload=json.dumps({
-                'session_id': session_id,
-                'cwd': str(Path.cwd()),
-                'timestamp': datetime.utcnow().isoformat()
-            }),
-            retain=False
-        )
+        if _cfg('session_mqtt'):
+            post(
+                topic="status/device_name/claude/session_end",
+                payload=json.dumps({
+                    'session_id': session_id,
+                    'cwd': str(Path.cwd()),
+                    'timestamp': datetime.utcnow().isoformat()
+                }),
+                retain=False
+            )
         publish_retained_topic(SESSION_CONTEXT_TOPIC, ended_payload)
         publish_retained_topic(GIT_CONTEXT_TOPIC, ended_payload)
         clear_git_context_file()

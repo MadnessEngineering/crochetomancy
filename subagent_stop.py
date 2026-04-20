@@ -26,7 +26,7 @@ except ImportError:
 def get_mongo_client():
     """Get MongoDB client with configurable URI."""
     mongo_uri = os.getenv('CLAUDE_MONGO_URI', 'mongodb://localhost:27017/')
-    return MongoClient(mongo_uri)
+    return MongoClient(mongo_uri, serverSelectionTimeoutMS=500, socketTimeoutMS=1000)
 
 def get_database_name():
     """Generate database name from project directory name."""
@@ -35,6 +35,15 @@ def get_database_name():
     # Sanitize for MongoDB (remove special chars)
     safe_name = project_name.replace('.', '_').replace('-', '_')
     return f"claudehooks_{safe_name}"
+
+# ── feature flags ──────────────────────────────────────────────────────────
+_HOOKS_CFG = Path.home() / '.claude' / 'hooks_config.json'
+def _cfg(key: str, default: bool = True) -> bool:
+    try:
+        return json.loads(_HOOKS_CFG.read_text()).get(key, default) if _HOOKS_CFG.exists() else default
+    except Exception:
+        return default
+# ───────────────────────────────────────────────────────────────────────────
 
 
 def get_tts_script_path():
@@ -108,24 +117,25 @@ def main():
         stop_hook_active = input_data.get("stop_hook_active", False)
 
         # Store data in MongoDB
-        try:
-            client = get_mongo_client()
-            db_name = get_database_name()
-            db = client[db_name]
-            collection = db['subagent_stop']
+        if _cfg('mongo_logging'):
+            try:
+                client = get_mongo_client()
+                db_name = get_database_name()
+                db = client[db_name]
+                collection = db['subagent_stop']
 
-            document = {
-                'session_id': session_id,
-                'stop_hook_active': stop_hook_active,
-                'timestamp': datetime.utcnow(),
-                'full_data': input_data
-            }
+                document = {
+                    'session_id': session_id,
+                    'stop_hook_active': stop_hook_active,
+                    'timestamp': datetime.utcnow(),
+                    'full_data': input_data
+                }
 
-            collection.insert_one(document)
-            client.close()
-        except Exception:
-            # Fail silently if MongoDB is not available
-            pass
+                collection.insert_one(document)
+                client.close()
+            except Exception:
+                # Fail silently if MongoDB is not available
+                pass
 
         # Handle --chat switch (same as stop.py)
         if args.chat and 'transcript_path' in input_data:
@@ -166,7 +176,7 @@ def main():
                     pass  # Fail silently
 
         # Announce subagent completion via TTS (only if --notify flag is set)
-        if args.notify:
+        if args.notify and _cfg('subagent_mqtt'):
             announce_subagent_completion()
 
         sys.exit(0)

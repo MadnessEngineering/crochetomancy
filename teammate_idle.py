@@ -39,12 +39,21 @@ except ImportError:
 
 def get_mongo_client():
     mongo_uri = os.getenv('CLAUDE_MONGO_URI', 'mongodb://localhost:27017/')
-    return MongoClient(mongo_uri)
+    return MongoClient(mongo_uri, serverSelectionTimeoutMS=500, socketTimeoutMS=1000)
 
 def get_database_name():
     project_name = Path.cwd().name
     safe_name = project_name.replace('.', '_').replace('-', '_')
     return f"claudehooks_{safe_name}"
+
+# ── feature flags ──────────────────────────────────────────────────────────
+_HOOKS_CFG = Path.home() / '.claude' / 'hooks_config.json'
+def _cfg(key: str, default: bool = True) -> bool:
+    try:
+        return json.loads(_HOOKS_CFG.read_text()).get(key, default) if _HOOKS_CFG.exists() else default
+    except Exception:
+        return default
+# ───────────────────────────────────────────────────────────────────────────
 
 
 def main():
@@ -60,39 +69,41 @@ def main():
         project_name = Path.cwd().name
 
         # Log to MongoDB
-        try:
-            client = get_mongo_client()
-            db = client[get_database_name()]
-            db['teammate_idle'].insert_one({
+        if _cfg('mongo_logging'):
+            try:
+                client = get_mongo_client()
+                db = client[get_database_name()]
+                db['teammate_idle'].insert_one({
+                    'session_id': session_id,
+                    'teammate_session_id': teammate_session_id,
+                    'message': message,
+                    'project': project_name,
+                    'timestamp': datetime.utcnow(),
+                    'full_data': input_data
+                })
+                client.close()
+            except Exception:
+                pass
+
+        # MQTT swarm bus — broadcast idle state for cross-agent coordination
+        if _cfg('teammate_idle_mqtt'):
+            swarm_payload = json.dumps({
                 'session_id': session_id,
                 'teammate_session_id': teammate_session_id,
                 'message': message,
                 'project': project_name,
-                'timestamp': datetime.utcnow(),
-                'full_data': input_data
+                'cwd': cwd,
+                'timestamp': datetime.utcnow().isoformat(),
+                # Hint: publish to status/device_name/claude/swarm/chat_in/{session_id}
+                # to inject a message back into this agent
+                'reply_topic': f"status/device_name/claude/swarm/chat_in/{session_id}"
             })
-            client.close()
-        except Exception:
-            pass
 
-        # MQTT swarm bus — broadcast idle state for cross-agent coordination
-        swarm_payload = json.dumps({
-            'session_id': session_id,
-            'teammate_session_id': teammate_session_id,
-            'message': message,
-            'project': project_name,
-            'cwd': cwd,
-            'timestamp': datetime.utcnow().isoformat(),
-            # Hint: publish to status/device_name/claude/swarm/chat_in/{session_id}
-            # to inject a message back into this agent
-            'reply_topic': f"status/device_name/claude/swarm/chat_in/{session_id}"
-        })
-
-        post(
-            topic="status/device_name/claude/swarm/idle",
-            payload=swarm_payload,
-            retain=False
-        )
+            post(
+                topic="status/device_name/claude/swarm/idle",
+                payload=swarm_payload,
+                retain=False
+            )
 
         sys.exit(0)
 
