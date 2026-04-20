@@ -15,6 +15,12 @@ from datetime import datetime
 from pymongo import MongoClient
 import uuid
 
+try:
+    from dvttestkit.testKitUtils import post as _mqtt_post
+    _MQTT_AVAILABLE = True
+except ImportError:
+    _MQTT_AVAILABLE = False
+
 def get_mongo_client():
     """Get MongoDB client with configurable URI."""
     mongo_uri = os.getenv('CLAUDE_MONGO_URI', 'mongodb://localhost:27017/')
@@ -124,6 +130,34 @@ def main():
                 # TODO replace with mqtt -C 1 check if the dangerous_rm value is boolen
                 print("BLOCKED: Dangerous rm command detected and prevented", file=sys.stderr)
                 sys.exit(2)  # Exit code 2 blocks tool call and shows error to Claude
+
+        # MQTT activity heartbeat — SwarmDesk live feed
+        if _MQTT_AVAILABLE:
+            try:
+                # Extract the most meaningful target for this tool call
+                target = ''
+                if tool_name in ('Read', 'Write', 'Edit', 'MultiEdit'):
+                    target = tool_input.get('file_path', '')
+                elif tool_name == 'Bash':
+                    target = tool_input.get('command', '')[:80]
+                elif tool_name == 'Glob':
+                    target = tool_input.get('pattern', '')
+                elif tool_name == 'Grep':
+                    target = tool_input.get('pattern', '')
+
+                _mqtt_post(
+                    topic="status/device_name/claude/activity",
+                    payload=json.dumps({
+                        'tool': tool_name,
+                        'target': target,
+                        'session': input_data.get('session_id', ''),
+                        'project': Path.cwd().name,
+                        'ts': datetime.utcnow().isoformat()
+                    }),
+                    retain=False
+                )
+            except Exception:
+                pass
 
         # Store data in MongoDB
         try:

@@ -21,6 +21,52 @@ try:
 except ImportError:
     pass  # dotenv is optional
 
+# Omnispindle project names derived from cwd path parts
+_PROJECT_NAMES = {
+    'omnispindle', 'inventorium', 'anathesmelt', 'swarmdesk',
+    'swarmonomicon', 'todomill_projectorium', 'hammerspoon',
+    'madness_interactive', 'chrome-devtools-mcp', 'lab',
+}
+
+def detect_project():
+    """Derive Omnispindle project name from current working directory."""
+    parts = [p.lower().replace('-', '_') for p in Path.cwd().parts]
+    for part in reversed(parts):
+        if part in _PROJECT_NAMES:
+            return part
+    return Path.cwd().name.lower().replace('-', '_')
+
+
+def fetch_omnispindle_context(project: str) -> str | None:
+    """Query swarmonomicon todos for active items in this project.
+    Returns a compact context string, or None if unavailable."""
+    try:
+        mongo_uri = os.getenv('MONGODB_URI', 'mongodb://localhost:27017/')
+        db_name = os.getenv('MONGODB_DB', 'swarmonomicon')
+        client = MongoClient(mongo_uri, serverSelectionTimeoutMS=2000)
+        db = client[db_name]
+
+        active = list(db['todos'].find(
+            {'project': project, 'status': {'$in': ['pending', 'in_progress', 'blocked', 'initial']}},
+            {'description': 1, 'priority': 1, 'status': 1, 'id': 1, '_id': 0},
+            limit=8
+        ))
+        client.close()
+
+        if not active:
+            return None
+
+        lines = [f"[{project} todos — {len(active)} active]"]
+        for t in active:
+            pri = t.get('priority', 'Medium')
+            status = t.get('status', 'pending')
+            desc = t.get('description', '')[:100]
+            status_tag = f" ({status})" if status not in ('pending', 'initial') else ''
+            lines.append(f"• [{pri}]{status_tag} {desc}")
+        return '\n'.join(lines)
+    except Exception:
+        return None
+
 
 def get_mongo_client():
     """Get MongoDB client with configurable URI."""
@@ -161,6 +207,8 @@ def main():
                           help='Store the last prompt for status line display')
         parser.add_argument('--name-agent', action='store_true',
                           help='Generate an agent name for the session')
+        parser.add_argument('--inject-context', action='store_true',
+                          help='Inject active Omnispindle todos as additionalContext')
         args = parser.parse_args()
 
         # Read JSON input from stdin
@@ -185,9 +233,17 @@ def main():
                 print(f"Prompt blocked: {reason}", file=sys.stderr)
                 sys.exit(2)
 
-        # Add context information (optional)
-        # You can print additional context that will be added to the prompt
-        # Example: print(f"Current time: {datetime.now()}")
+        # Inject Omnispindle context into the prompt if requested
+        if args.inject_context:
+            project = detect_project()
+            context = fetch_omnispindle_context(project)
+            if context:
+                print(json.dumps({
+                    "hookSpecificOutput": {
+                        "hookEventName": "UserPromptSubmit",
+                        "additionalContext": context
+                    }
+                }))
 
         # Success - prompt will be processed
         sys.exit(0)

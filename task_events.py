@@ -40,6 +40,57 @@ def get_database_name():
     safe_name = project_name.replace('.', '_').replace('-', '_')
     return f"claudehooks_{safe_name}"
 
+_PROJECT_NAMES = {
+    'omnispindle', 'inventorium', 'anathesmelt', 'swarmdesk',
+    'swarmonomicon', 'todomill_projectorium', 'hammerspoon',
+    'madness_interactive', 'chrome-devtools-mcp', 'lab',
+}
+
+def detect_omnispindle_project():
+    parts = [p.lower().replace('-', '_') for p in Path.cwd().parts]
+    for part in reversed(parts):
+        if part in _PROJECT_NAMES:
+            return part
+    return Path.cwd().name.lower().replace('-', '_')
+
+
+def mirror_to_omnispindle(task_id: str, title: str, description: str, session_id: str, event: str):
+    """Mirror a Claude Code task into the Omnispindle swarmonomicon todos collection."""
+    try:
+        mongo_uri = os.getenv('MONGODB_URI', 'mongodb://localhost:27017/')
+        db_name = os.getenv('MONGODB_DB', 'swarmonomicon')
+        client = MongoClient(mongo_uri, serverSelectionTimeoutMS=2000)
+        db = client[db_name]
+
+        if event == 'created':
+            import uuid as _uuid
+            doc = {
+                'id': str(_uuid.uuid4()),
+                'description': title or description,
+                'project': detect_omnispindle_project(),
+                'status': 'in_progress',
+                'priority': 'Medium',
+                'created_at': int(datetime.utcnow().timestamp()),
+                'target_agent': 'AI',
+                'notes': description[:300] if description else '',
+                'metadata': {
+                    'claude_task_id': task_id,
+                    'claude_session_id': session_id,
+                    'source': 'claude_code_task_hook',
+                    'files': [str(Path.cwd())]
+                }
+            }
+            db['todos'].insert_one(doc)
+        elif event == 'completed':
+            # Mark matching todo as review
+            db['todos'].update_one(
+                {'metadata.claude_task_id': task_id},
+                {'$set': {'status': 'review', 'completed_at': int(datetime.utcnow().timestamp())}}
+            )
+        client.close()
+    except Exception:
+        pass
+
 
 def main():
     try:
@@ -91,6 +142,9 @@ def main():
             payload=mqtt_payload,
             retain=False
         )
+
+        # Mirror into Omnispindle swarmonomicon todos
+        mirror_to_omnispindle(task_id, title, description, session_id, args.event)
 
         sys.exit(0)
 
