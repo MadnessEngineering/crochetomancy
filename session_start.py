@@ -321,12 +321,9 @@ def build_todo_context(session_id, source):
     if not is_probable_todo_id(session_id):
         return "\n".join(parts)
 
-    parts.append(f"Session ID looks like a todo ID: {session_id}")
     todo = find_todo_by_id(session_id)
     if not todo:
-        parts.append(
-            f"Startup hint: call `get_todo` with todo_id `{session_id}` before planning work."
-        )
+        # Session ID is a UUID but not a known todo — normal Claude session, skip hint
         return "\n".join(parts)
 
     title = as_text(first_value(todo, ["description", "title", "name", "task"]))
@@ -378,11 +375,11 @@ def build_git_context_payload(session_id, source):
     }
 
     if is_probable_todo_id(session_id):
-        payload["active_todo_id"] = session_id
-        payload["todo_short_id"] = session_id.split("-")[0]
-        payload["commit_prefix"] = session_id
         todo = find_todo_by_id(session_id)
         if todo:
+            payload["active_todo_id"] = session_id
+            payload["todo_short_id"] = session_id.split("-")[0]
+            payload["commit_prefix"] = session_id
             title = as_text(first_value(todo, ["description", "title", "name", "task"]))
             payload["todo_title"] = title
             payload["suggested_branch"] = f"todo/{session_id}-{slugify(title)}"

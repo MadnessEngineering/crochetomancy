@@ -16,6 +16,7 @@ const flagPath = path.join(claudeDir, '.tinker-active');
 const settingsPath = path.join(claudeDir, 'settings.json');
 
 const mode = getDefaultMode();
+const modeLabel = mode.startsWith('tinker-') ? mode.slice(7) : mode;
 
 // "off" mode — skip activation entirely, don't write flag or emit rules
 if (mode === 'off') {
