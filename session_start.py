@@ -37,6 +37,7 @@ MQTT_HOST = os.getenv("MADNESS_MQTT_HOST", "localhost")
 DEVICE_NAME = os.getenv("DeNa", "macbook")
 SESSION_CONTEXT_TOPIC = f"status/{DEVICE_NAME}/claude/session/context"
 GIT_CONTEXT_TOPIC = f"status/{DEVICE_NAME}/claude/git/context"
+SESSION_START_TOPIC = f"status/{DEVICE_NAME}/claude/session_start"
 
 # ── feature flags ──────────────────────────────────────────────────────────
 _HOOKS_CFG = Path.home() / '.claude' / 'hooks_config.json'
@@ -444,7 +445,16 @@ def main():
             maybe_pull_main()
 
         if _cfg('session_mqtt'):
-            post(f"{os.getenv('DeNa')}", input_data, True)
+            post(
+                topic=SESSION_START_TOPIC,
+                payload=json.dumps({
+                    'session_id': session_id,
+                    'source': source,
+                    'cwd': str(Path.cwd()),
+                    'timestamp': datetime.utcnow().isoformat(),
+                }),
+                retain=True,
+            )
         # Log the session start event
         if _cfg('mongo_logging'):
             log_session_start(input_data)

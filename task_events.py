@@ -12,7 +12,7 @@
 #
 # Cross-agent chat potential: task events are broadcast on mqtt so
 # sibling agents and the SwarmDesk dashboard can see work in-flight.
-# Subscribe to status/device_name/claude/task/# to watch all agents.
+# Subscribe to status/{DeNa}/claude/task/# to watch all agents.
 
 import argparse
 import json
@@ -29,6 +29,9 @@ try:
     load_dotenv()
 except ImportError:
     pass
+
+DEVICE_NAME = os.getenv("DeNa", "macbook")
+TASK_TOPIC_PREFIX = f"status/{DEVICE_NAME}/claude/task"
 
 
 def get_mongo_client():
@@ -135,8 +138,8 @@ def main():
                 pass
 
         # MQTT — broadcast task lifecycle on a hierarchical topic
-        # Subscribe to status/device_name/claude/task/# for all task events
-        # or status/device_name/claude/task/created for just new tasks
+        # Subscribe to status/{DeNa}/claude/task/# for all task events
+        # or status/{DeNa}/claude/task/created for just new tasks
         mqtt_payload = json.dumps({
             'session_id': session_id,
             'task_id': task_id,
@@ -148,7 +151,7 @@ def main():
         })
 
         post(
-            topic=f"status/device_name/claude/task/{args.event}",
+            topic=f"{TASK_TOPIC_PREFIX}/{args.event}",
             payload=mqtt_payload,
             retain=False
         )

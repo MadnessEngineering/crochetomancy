@@ -27,6 +27,7 @@ MQTT_HOST = os.getenv("MADNESS_MQTT_HOST", "localhost")
 DEVICE_NAME = os.getenv("DeNa", "macbook")
 SESSION_CONTEXT_TOPIC = f"status/{DEVICE_NAME}/claude/session/context"
 GIT_CONTEXT_TOPIC = f"status/{DEVICE_NAME}/claude/git/context"
+SESSION_END_TOPIC = f"status/{DEVICE_NAME}/claude/session_end"
 
 
 def get_mongo_client():
@@ -120,7 +121,7 @@ def main():
         # MQTT — SessionEnd complements SessionStart for full lifecycle tracking
         if _cfg('session_mqtt'):
             post(
-                topic="status/device_name/claude/session_end",
+                topic=SESSION_END_TOPIC,
                 payload=json.dumps({
                     'session_id': session_id,
                     'cwd': str(Path.cwd()),

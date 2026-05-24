@@ -24,6 +24,9 @@ try:
 except ImportError:
     pass  # dotenv is optional
 
+DEVICE_NAME = os.getenv("DeNa", "macbook")
+NOTIFICATION_TOPIC = f"status/{DEVICE_NAME}/claude/notification"
+
 
 # ── feature flags ──────────────────────────────────────────────────────────
 _HOOKS_CFG = Path.home() / '.claude' / 'hooks_config.json'
@@ -80,7 +83,7 @@ def get_tts_script_path():
 def announce_notification():
     """Announce that the agent needs user input."""
     pass
-    # _post(topic="status/device_name/claude/notification", payload="notification", retain=False)
+    # _post(topic=NOTIFICATION_TOPIC, payload="notification", retain=False)
 
     # try:
     #     tts_script = get_tts_script_path()
@@ -143,7 +146,7 @@ def main():
 
         # Post to MQTT
         if _cfg('notification_mqtt'):
-            _post(topic="status/claude/notification", payload=str(json.dumps(input_data)), retain=False)
+            _post(topic=NOTIFICATION_TOPIC, payload=str(json.dumps(input_data)), retain=False)
 
         # Announce notification via TTS only if --notify flag is set
         # Skip TTS for the generic "Claude is waiting for your input" message

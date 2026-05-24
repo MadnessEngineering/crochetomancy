@@ -16,11 +16,16 @@ from pathlib import Path
 from datetime import datetime
 from pymongo import MongoClient
 
+from dvttestkit.testKitUtils import post
+
 try:
     from dotenv import load_dotenv
     load_dotenv()
 except ImportError:
     pass  # dotenv is optional
+
+DEVICE_NAME = os.getenv("DeNa", "macbook")
+SUBAGENT_STOP_TOPIC = f"status/{DEVICE_NAME}/claude/subagent_stop"
 
 
 def get_mongo_client():
@@ -174,6 +179,23 @@ def main():
                             pass  # Fail silently
                 except Exception:
                     pass  # Fail silently
+
+        # MQTT — pair with SubagentStart for full subagent lifecycle
+        if _cfg('subagent_mqtt'):
+            try:
+                post(
+                    topic=SUBAGENT_STOP_TOPIC,
+                    payload=json.dumps({
+                        'session_id': session_id,
+                        'parent_session_id': input_data.get('parent_session_id', ''),
+                        'stop_hook_active': stop_hook_active,
+                        'cwd': str(Path.cwd()),
+                        'timestamp': datetime.utcnow().isoformat(),
+                    }),
+                    retain=False,
+                )
+            except Exception:
+                pass
 
         # Announce subagent completion via TTS (only if --notify flag is set)
         if args.notify and _cfg('subagent_mqtt'):

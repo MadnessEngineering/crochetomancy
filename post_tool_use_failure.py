@@ -22,6 +22,9 @@ try:
 except ImportError:
     pass
 
+DEVICE_NAME = os.getenv("DeNa", "macbook")
+TOOL_FAILURE_TOPIC = f"status/{DEVICE_NAME}/claude/tool_failure"
+
 
 def get_mongo_client():
     mongo_uri = os.getenv('CLAUDE_MONGO_URI', 'mongodb://localhost:27017/')
@@ -71,7 +74,7 @@ def main():
         # MQTT — visibility into tool failures across the swarm dashboard
         if _cfg('notification_mqtt'):
             post(
-                topic="status/device_name/claude/tool_failure",
+                topic=TOOL_FAILURE_TOPIC,
                 payload=json.dumps({
                     'session_id': session_id,
                     'tool_name': tool_name,

@@ -12,13 +12,13 @@
 # Cross-agent coordination via MQTT:
 # When an agent goes idle (waiting for user input), it publishes its state
 # to the swarm bus. Other agents or n8n automations can subscribe to
-# status/device_name/claude/swarm/idle and:
+# status/{DeNa}/claude/swarm/idle and:
 #   - Show a unified "who's waiting" view in SwarmDesk
 #   - Route messages between agents via mqtt
 #   - Trigger automated handoffs or context sharing
 #
 # To send a message TO an idle agent, publish to:
-#   status/device_name/claude/swarm/chat_in/{session_id}
+#   status/{DeNa}/claude/swarm/chat_in/{session_id}
 # (wire that up via n8n or another agent's hook)
 
 import json
@@ -35,6 +35,10 @@ try:
     load_dotenv()
 except ImportError:
     pass
+
+DEVICE_NAME = os.getenv("DeNa", "macbook")
+SWARM_IDLE_TOPIC = f"status/{DEVICE_NAME}/claude/swarm/idle"
+SWARM_CHAT_IN_TOPIC_PREFIX = f"status/{DEVICE_NAME}/claude/swarm/chat_in"
 
 
 def get_mongo_client():
@@ -94,13 +98,13 @@ def main():
                 'project': project_name,
                 'cwd': cwd,
                 'timestamp': datetime.utcnow().isoformat(),
-                # Hint: publish to status/device_name/claude/swarm/chat_in/{session_id}
+                # Hint: publish to SWARM_CHAT_IN_TOPIC_PREFIX/{session_id}
                 # to inject a message back into this agent
-                'reply_topic': f"status/device_name/claude/swarm/chat_in/{session_id}"
+                'reply_topic': f"{SWARM_CHAT_IN_TOPIC_PREFIX}/{session_id}"
             })
 
             post(
-                topic="status/device_name/claude/swarm/idle",
+                topic=SWARM_IDLE_TOPIC,
                 payload=swarm_payload,
                 retain=False
             )

@@ -22,6 +22,9 @@ try:
 except ImportError:
     pass
 
+DEVICE_NAME = os.getenv("DeNa", "macbook")
+SUBAGENT_START_TOPIC = f"status/{DEVICE_NAME}/claude/subagent_start"
+
 
 def get_mongo_client():
     mongo_uri = os.getenv('CLAUDE_MONGO_URI', 'mongodb://localhost:27017/')
@@ -67,7 +70,7 @@ def main():
         # MQTT publish — pair with SubagentStop for full subagent lifecycle
         if _cfg('subagent_mqtt'):
             post(
-                topic="status/device_name/claude/subagent_start",
+                topic=SUBAGENT_START_TOPIC,
                 payload=json.dumps({
                     'session_id': session_id,
                     'parent_session_id': parent_session_id,

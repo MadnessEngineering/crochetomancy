@@ -13,6 +13,15 @@ from pathlib import Path
 from datetime import datetime
 from pymongo import MongoClient
 
+try:
+    from dvttestkit.testKitUtils import post as _mqtt_post
+    _MQTT_AVAILABLE = True
+except ImportError:
+    _MQTT_AVAILABLE = False
+
+DEVICE_NAME = os.getenv("DeNa", "macbook")
+ACTIVITY_POST_TOOL_TOPIC = f"status/{DEVICE_NAME}/activity/post_tool"
+
 def get_mongo_client():
     """Get MongoDB client with configurable URI."""
     mongo_uri = os.getenv('CLAUDE_MONGO_URI', 'mongodb://localhost:27017/')
@@ -39,6 +48,26 @@ def main():
     try:
         # Read JSON input from stdin
         input_data = json.load(sys.stdin)
+
+        tool_name = input_data.get('tool_name', '')
+        is_error = bool(input_data.get('is_error') or input_data.get('error'))
+
+        # MQTT activity heartbeat — pairs with PreToolUse on the SwarmDesk live feed
+        if _MQTT_AVAILABLE and _cfg('activity_heartbeat'):
+            try:
+                _mqtt_post(
+                    topic=ACTIVITY_POST_TOOL_TOPIC,
+                    payload=json.dumps({
+                        'tool': tool_name,
+                        'status': 'error' if is_error else 'complete',
+                        'session': input_data.get('session_id', ''),
+                        'project': Path.cwd().name,
+                        'ts': datetime.utcnow().isoformat(),
+                    }),
+                    retain=False,
+                )
+            except Exception:
+                pass
 
         # Update MongoDB document with post-execution data
         if _cfg('mongo_logging'):

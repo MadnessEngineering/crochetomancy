@@ -22,6 +22,9 @@ try:
 except ImportError:
     pass
 
+DEVICE_NAME = os.getenv("DeNa", "macbook")
+POST_COMPACT_TOPIC = f"status/{DEVICE_NAME}/claude/post_compact"
+
 
 def get_mongo_client():
     mongo_uri = os.getenv('CLAUDE_MONGO_URI', 'mongodb://localhost:27017/')
@@ -69,7 +72,7 @@ def main():
         # MQTT — pairs with PreCompact, signals compaction is done and context refreshed
         if _cfg('compact_mqtt'):
             post(
-                topic="status/device_name/claude/post_compact",
+                topic=POST_COMPACT_TOPIC,
                 payload=json.dumps({
                     'session_id': session_id,
                     'trigger': trigger,

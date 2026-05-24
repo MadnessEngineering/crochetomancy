@@ -26,6 +26,9 @@ try:
 except ImportError:
     pass
 
+DEVICE_NAME = os.getenv("DeNa", "macbook")
+PERMISSION_TOPIC_PREFIX = f"status/{DEVICE_NAME}/claude/permission"
+
 
 def get_mongo_client():
     mongo_uri = os.getenv('CLAUDE_MONGO_URI', 'mongodb://localhost:27017/')
@@ -79,7 +82,7 @@ def main():
         # MQTT — permission denied is especially useful to surface in dashboards
         if _cfg('permission_mqtt'):
             post(
-                topic=f"status/device_name/claude/permission/{args.event}",
+                topic=f"{PERMISSION_TOPIC_PREFIX}/{args.event}",
                 payload=json.dumps({
                     'session_id': session_id,
                     'tool_name': tool_name,

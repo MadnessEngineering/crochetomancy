@@ -26,6 +26,9 @@ try:
 except ImportError:
     pass  # dotenv is optional
 
+DEVICE_NAME = os.getenv("DeNa", "macbook")
+SESSION_STOP_TOPIC = f"status/{DEVICE_NAME}/claude/session_stop"
+
 
 # ── feature flags ──────────────────────────────────────────────────────────
 _HOOKS_CFG = Path.home() / '.claude' / 'hooks_config.json'
@@ -158,7 +161,7 @@ def get_llm_completion_message():
 
 def announce_completion():
     """Announce completion using the best available TTS service."""
-    post(topic="status/device_name/claude/session_stop", payload=str(get_llm_completion_message()), retain=False)
+    post(topic=SESSION_STOP_TOPIC, payload=str(get_llm_completion_message()), retain=False)
     # try:
     #     tts_script = get_tts_script_path()
     #     if not tts_script:

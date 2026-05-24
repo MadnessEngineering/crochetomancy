@@ -21,6 +21,9 @@ try:
 except ImportError:
     _MQTT_AVAILABLE = False
 
+DEVICE_NAME = os.getenv("DeNa", "macbook")
+ACTIVITY_PRE_TOOL_TOPIC = f"status/{DEVICE_NAME}/activity/pre_tool"
+
 # ── feature flags ──────────────────────────────────────────────────────────
 _HOOKS_CFG = Path.home() / '.claude' / 'hooks_config.json'
 def _cfg(key: str, default: bool = True) -> bool:
@@ -155,7 +158,7 @@ def main():
                     target = tool_input.get('pattern', '')
 
                 _mqtt_post(
-                    topic="status/device_name/claude/activity",
+                    topic=ACTIVITY_PRE_TOOL_TOPIC,
                     payload=json.dumps({
                         'tool': tool_name,
                         'target': target,
