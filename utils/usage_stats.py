@@ -135,25 +135,23 @@ def fetch_usage() -> Optional[dict]:
 
 
 def summarize(body: dict | None) -> dict:
-    """Flatten API body into MQTT-friendly summary. Empty dict if no data.
+    """Return {"used": int_pct, "reset": "h:mm local"} for the five_hour window.
 
-    Includes every window with a non-null utilization (five_hour, seven_day_*,
-    extra_usage, etc). Skips the noisy empty placeholders the API returns null.
+    Returns {} when the five_hour window is missing or has no reset time.
     """
     if not body or not isinstance(body, dict):
         return {}
-    out: dict = {"stale": bool(body.get("_stale"))}
-    windows: dict = {}
-    for key, win in body.items():
-        if key.startswith("_") or not isinstance(win, dict):
-            continue
-        util = win.get("utilization")
-        if util is None:
-            continue
-        windows[key] = {
-            "utilization": util,
-            "resets_at": win.get("resets_at") or win.get("resetsAt"),
-        }
-    if windows:
-        out["windows"] = windows
-    return out
+    win = body.get("five_hour")
+    if not isinstance(win, dict):
+        return {}
+    util = win.get("utilization")
+    resets_at = win.get("resets_at") or win.get("resetsAt")
+    if util is None or not resets_at:
+        return {}
+    from datetime import datetime
+    try:
+        local = datetime.fromisoformat(resets_at.replace("Z", "+00:00")).astimezone()
+        reset_str = local.strftime("%-I:%M")
+    except Exception:
+        return {}
+    return {"used": int(round(util)), "reset": reset_str}
