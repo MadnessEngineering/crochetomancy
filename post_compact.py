@@ -17,6 +17,12 @@ from pymongo import MongoClient
 from dvttestkit.testKitUtils import post
 
 try:
+    from utils.usage_stats import fetch_usage, summarize
+except Exception:
+    def fetch_usage(): return None
+    def summarize(_): return {}
+
+try:
     from dotenv import load_dotenv
     load_dotenv()
 except ImportError:
@@ -71,14 +77,18 @@ def main():
 
         # MQTT — pairs with PreCompact, signals compaction is done and context refreshed
         if _cfg('compact_mqtt'):
+            payload = {
+                'session_id': session_id,
+                'trigger': trigger,
+                'cwd': str(Path.cwd()),
+                'timestamp': datetime.utcnow().isoformat(),
+            }
+            usage = summarize(fetch_usage()) if _cfg('usage_stats') else {}
+            if usage:
+                payload['usage'] = usage
             post(
                 topic=POST_COMPACT_TOPIC,
-                payload=json.dumps({
-                    'session_id': session_id,
-                    'trigger': trigger,
-                    'cwd': str(Path.cwd()),
-                    'timestamp': datetime.utcnow().isoformat()
-                }),
+                payload=json.dumps(payload),
                 retain=False
             )
 

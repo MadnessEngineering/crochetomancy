@@ -18,6 +18,12 @@ from pymongo import MongoClient
 from dvttestkit.testKitUtils import post
 
 try:
+    from utils.usage_stats import fetch_usage, summarize
+except Exception:
+    def fetch_usage(): return None
+    def summarize(_): return {}
+
+try:
     from dotenv import load_dotenv
     load_dotenv()
 except ImportError:
@@ -120,13 +126,17 @@ def main():
 
         # MQTT — SessionEnd complements SessionStart for full lifecycle tracking
         if _cfg('session_mqtt'):
+            payload = {
+                'session_id': session_id,
+                'cwd': str(Path.cwd()),
+                'timestamp': datetime.utcnow().isoformat(),
+            }
+            usage = summarize(fetch_usage()) if _cfg('usage_stats') else {}
+            if usage:
+                payload['usage'] = usage
             post(
                 topic=SESSION_END_TOPIC,
-                payload=json.dumps({
-                    'session_id': session_id,
-                    'cwd': str(Path.cwd()),
-                    'timestamp': datetime.utcnow().isoformat()
-                }),
+                payload=json.dumps(payload),
                 retain=False
             )
         publish_retained_topic(SESSION_CONTEXT_TOPIC, ended_payload)
