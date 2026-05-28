@@ -1,7 +1,0 @@
-{
-  "session_id": "e63797d6-3873-4955-9d49-b257b25e4f1c",
-  "prompts": [
-    "Okay limit reset, whats next",
-    "dvttestkit.testKitUtils/status/macbook/claude/session_end {\"session_id\": \"live-test\", \"cwd\": \"/Users/d.edens/lab/madness_interactive/Anathesmelt/claude-prime/hooks\", \"timestamp\": \"2026-05-27T19:51:15.942525\", \"usage\": {\"stale\": false, \"windows\": {\"five_hour\": {\"utilization\": 74.0, \"resets_at\": \"2026-05-27T21:10:00.136337+00:00\"}, \"seven_day_omelette\": {\"utilization\": 0.0, \"resets_at\": null}}}} \n\n\nhere is an example of the publish. Can we change it so we ust end up with \"usage\": {\"used\": 74, \"reset\":\"6:10\"} to adjust it to my timezone and declutter stuff I dont need"
-  ]
-}
