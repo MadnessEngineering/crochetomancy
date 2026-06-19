@@ -100,6 +100,7 @@ def log_session_start(input_data):
         document = {
             'session_id': input_data.get('session_id'),
             'source': input_data.get('source'),
+            'session_title': input_data.get('session_title'),
             'timestamp': datetime.utcnow(),
             'full_data': input_data
         }
@@ -420,6 +421,24 @@ def save_git_context_file(payload):
         pass
 
 
+def read_cached_agent_name(session_id):
+    """Read agent_name from the sidecar written by user_prompt_submit.py, if present."""
+    try:
+        session_file = Path(".claude/data/sessions") / f"{session_id}.json"
+        if session_file.exists():
+            with open(session_file) as f:
+                return json.load(f).get("agent_name")
+    except Exception:
+        pass
+    return None
+
+
+def build_session_title(session_id):
+    """Full UUID first (greppable across Claude Code, MQTT, Mongo); slug appended if known."""
+    name = read_cached_agent_name(session_id)
+    return f"{session_id} · {name}" if name else session_id
+
+
 def main():
     try:
         # Parse command line arguments
@@ -437,6 +456,11 @@ def main():
         session_id = input_data.get('session_id', 'unknown')
         source = input_data.get('source', 'unknown')  # "startup", "resume", or "clear"
 
+        # Visible chat name: full UUID (+ slug on resume). Stamp into input_data so it
+        # reaches the Mongo doc too.
+        session_title = build_session_title(session_id)
+        input_data['session_title'] = session_title
+
         # Refresh feature-flag cache from MQTT retained config — all hooks read the file
         refresh_hooks_config()
 
@@ -450,6 +474,7 @@ def main():
                 payload=json.dumps({
                     'session_id': session_id,
                     'source': source,
+                    'session_title': session_title,
                     'cwd': str(Path.cwd()),
                     'timestamp': datetime.utcnow().isoformat(),
                 }),
@@ -465,14 +490,13 @@ def main():
         publish_retained_topic(SESSION_CONTEXT_TOPIC, git_context_payload)
         publish_retained_topic(GIT_CONTEXT_TOPIC, git_context_payload)
         save_git_context_file(git_context_payload)
+        hook_output = {
+            "hookEventName": "SessionStart",
+            "sessionTitle": session_title,
+        }
         if additional_context:
-            output = {
-                "hookSpecificOutput": {
-                    "hookEventName": "SessionStart",
-                    "additionalContext": additional_context
-                }
-            }
-            print(json.dumps(output))
+            hook_output["additionalContext"] = additional_context
+        print(json.dumps({"hookSpecificOutput": hook_output}))
 
         # Load development context if requested
         # if args.load_context:

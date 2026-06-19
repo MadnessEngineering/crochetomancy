@@ -183,6 +183,8 @@ def manage_session_data(session_id, prompt, name_agent=False):
         # Silently fail if we can't write the file
         pass
 
+    return session_data
+
 
 def validate_prompt(prompt):
     """
@@ -232,8 +234,9 @@ def main():
             log_user_prompt(session_id, input_data)
 
         # Manage session data with JSON structure
+        session_data = None
         if args.store_last_prompt or args.name_agent:
-            manage_session_data(session_id, prompt, name_agent=args.name_agent)
+            session_data = manage_session_data(session_id, prompt, name_agent=args.name_agent)
 
         # Validate prompt if requested and not in log-only mode
         if args.validate and not args.log_only:
@@ -243,17 +246,22 @@ def main():
                 print(f"Prompt blocked: {reason}", file=sys.stderr)
                 sys.exit(2)
 
-        # Inject Omnispindle context into the prompt if requested
+        # Build a single hookSpecificOutput combining the upgraded session title
+        # (full UUID + descriptive slug) and any injected context.
+        hook_output = {"hookEventName": "UserPromptSubmit"}
+
+        if args.name_agent and session_data and session_data.get("agent_name"):
+            hook_output["sessionTitle"] = f"{session_id} · {session_data['agent_name']}"
+
         if args.inject_context and _cfg('context_injection'):
             project = detect_project()
             context = fetch_omnispindle_context(project)
             if context:
-                print(json.dumps({
-                    "hookSpecificOutput": {
-                        "hookEventName": "UserPromptSubmit",
-                        "additionalContext": context
-                    }
-                }))
+                hook_output["additionalContext"] = context
+
+        # Only emit when we have something beyond the bare event name
+        if len(hook_output) > 1:
+            print(json.dumps({"hookSpecificOutput": hook_output}))
 
         # Success - prompt will be processed
         sys.exit(0)
