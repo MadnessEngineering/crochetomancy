@@ -1,0 +1,112 @@
+{
+  "version": 1,
+  "description": "Claude Code Loadout catalog. Tiers compose via `extends`. The madnessDesktop installer reads this, expands the chosen tier, substitutes {{HOOKS_DIR}} with the real clone path, and merges the resulting commands into ~/.claude/settings.json. Keep this file in sync with the hooks it references.",
+  "pathToken": "{{HOOKS_DIR}}",
+  "tiers": {
+    "minimal": {
+      "label": "Minimal",
+      "summary": "Infra-free essentials. No Mongo/MQTT/external binaries — runs anywhere python3 exists.",
+      "deps": ["python3"],
+      "optional": [],
+      "events": {
+        "SessionStart": [
+          "python3 {{HOOKS_DIR}}/session_start.py"
+        ],
+        "UserPromptSubmit": [
+          "python3 {{HOOKS_DIR}}/user_prompt_submit.py --store-last-prompt --name-agent --inject-context"
+        ],
+        "Stop": [
+          "python3 {{HOOKS_DIR}}/stop.py --autocommit"
+        ]
+      }
+    },
+    "standard": {
+      "label": "Standard",
+      "summary": "Minimal + telemetry/logging hooks. Mongo + MQTT used when present, degrade to no-op when absent (import-safe).",
+      "extends": "minimal",
+      "deps": ["python3"],
+      "optional": ["pymongo", "mongo", "mqtt"],
+      "events": {
+        "PreToolUse": [
+          "python3 {{HOOKS_DIR}}/pre_tool_use.py"
+        ],
+        "PostToolUse": [
+          "python3 {{HOOKS_DIR}}/post_tool_use.py"
+        ],
+        "PostToolUseFailure": [
+          "python3 {{HOOKS_DIR}}/post_tool_use_failure.py"
+        ],
+        "Notification": [
+          "python3 {{HOOKS_DIR}}/notification.py --notify"
+        ],
+        "SubagentStart": [
+          "python3 {{HOOKS_DIR}}/subagent_start.py"
+        ],
+        "SubagentStop": [
+          "python3 {{HOOKS_DIR}}/subagent_stop.py --notify"
+        ],
+        "PreCompact": [
+          "python3 {{HOOKS_DIR}}/pre_compact.py"
+        ],
+        "PostCompact": [
+          "python3 {{HOOKS_DIR}}/post_compact.py"
+        ],
+        "SessionEnd": [
+          "python3 {{HOOKS_DIR}}/session_end.py"
+        ],
+        "TaskCreated": [
+          "python3 {{HOOKS_DIR}}/task_events.py --event created"
+        ],
+        "TaskCompleted": [
+          "python3 {{HOOKS_DIR}}/task_events.py --event completed"
+        ],
+        "PermissionRequest": [
+          "python3 {{HOOKS_DIR}}/permission_events.py --event request"
+        ],
+        "PermissionDenied": [
+          "python3 {{HOOKS_DIR}}/permission_events.py --event denied"
+        ],
+        "TeammateIdle": [
+          "python3 {{HOOKS_DIR}}/teammate_idle.py"
+        ]
+      }
+    },
+    "full": {
+      "label": "Full",
+      "summary": "Standard + machine-specific externals: titancall push notifications and tinker-mode node scripts. Requires node and a titancall binary on PATH.",
+      "extends": "standard",
+      "deps": ["python3", "node"],
+      "optional": ["titancall", "dvttestkit"],
+      "events": {
+        "SessionStart": [
+          "node {{HOOKS_DIR}}/tinker-activate.js",
+          "titancall start &"
+        ],
+        "UserPromptSubmit": [
+          "node {{HOOKS_DIR}}/tinker-mode-tracker.js"
+        ],
+        "Notification": [
+          "titancall notify &"
+        ],
+        "Stop": [
+          "titancall done &"
+        ],
+        "SubagentStop": [
+          "titancall follow &"
+        ],
+        "SessionEnd": [
+          "titancall exit &"
+        ],
+        "PostToolUseFailure": [
+          "titancall error &"
+        ],
+        "TaskCompleted": [
+          "titancall success &"
+        ],
+        "PermissionRequest": [
+          "titancall warn &"
+        ]
+      }
+    }
+  }
+}

@@ -11,7 +11,10 @@ import os
 import sys
 from pathlib import Path
 from datetime import datetime
-from pymongo import MongoClient
+try:
+    from pymongo import MongoClient
+except ImportError:
+    MongoClient = None  # no mongo available
 import uuid
 
 try:
@@ -34,6 +37,8 @@ def _cfg(key: str, default: bool = True) -> bool:
 
 def get_mongo_client():
     """Get MongoDB client with configurable URI."""
+    if MongoClient is None:
+        return None
     mongo_uri = os.getenv('CLAUDE_MONGO_URI', 'mongodb://localhost:27017/')
     return MongoClient(mongo_uri, serverSelectionTimeoutMS=500, socketTimeoutMS=1000)
 

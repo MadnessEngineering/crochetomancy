@@ -16,9 +16,15 @@ import subprocess
 import tempfile
 from pathlib import Path
 from datetime import datetime
-from pymongo import MongoClient
+try:
+    from pymongo import MongoClient
+except ImportError:
+    MongoClient = None  # no mongo available
 
-from dvttestkit.testKitUtils import post
+try:
+    from dvttestkit.testKitUtils import post
+except ImportError:
+    def post(*a, **k): pass  # no broker available
 
 try:
     from dotenv import load_dotenv
@@ -41,6 +47,8 @@ def _cfg(key: str, default: bool = True) -> bool:
 
 def get_mongo_client():
     """Get MongoDB client with configurable URI."""
+    if MongoClient is None:
+        return None
     mongo_uri = os.getenv('CLAUDE_MONGO_URI', 'mongodb://localhost:27017/')
     return MongoClient(mongo_uri, serverSelectionTimeoutMS=500, socketTimeoutMS=1000)
 
