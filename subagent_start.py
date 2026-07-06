@@ -83,7 +83,11 @@ def main():
                     'session_id': session_id,
                     'parent_session_id': parent_session_id,
                     'cwd': str(Path.cwd()),
-                    'timestamp': datetime.utcnow().isoformat()
+                    'timestamp': datetime.utcnow().isoformat(),
+                    # Identify which subagent this lifecycle span belongs to so
+                    # MadQTT can bound & label the collapsible group.
+                    'agent_id': input_data.get('agent_id', ''),
+                    'agent_type': input_data.get('agent_type', ''),
                 }),
                 retain=False
             )

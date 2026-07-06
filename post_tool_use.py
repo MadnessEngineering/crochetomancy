@@ -68,6 +68,11 @@ def main():
                         'session': input_data.get('session_id', ''),
                         'project': Path.cwd().name,
                         'ts': datetime.utcnow().isoformat(),
+                        # Subagent attribution — see pre_tool_use.py. tool_use_id
+                        # pairs this post with its pre even under parallel subagents.
+                        'agent_id': input_data.get('agent_id', ''),
+                        'agent_type': input_data.get('agent_type', ''),
+                        'tool_use_id': input_data.get('tool_use_id', ''),
                     }),
                     retain=False,
                 )

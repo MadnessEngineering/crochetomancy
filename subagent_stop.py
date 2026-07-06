@@ -199,6 +199,9 @@ def main():
                         'stop_hook_active': stop_hook_active,
                         'cwd': str(Path.cwd()),
                         'timestamp': datetime.utcnow().isoformat(),
+                        # Close the subagent span MadQTT opened on subagent_start.
+                        'agent_id': input_data.get('agent_id', ''),
+                        'agent_type': input_data.get('agent_type', ''),
                     }),
                     retain=False,
                 )

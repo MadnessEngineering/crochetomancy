@@ -79,7 +79,13 @@ def main():
                         'target': target,
                         'session': input_data.get('session_id', ''),
                         'project': Path.cwd().name,
-                        'ts': datetime.utcnow().isoformat()
+                        'ts': datetime.utcnow().isoformat(),
+                        # Subagent attribution — present only when this tool call
+                        # runs inside a Task/subagent. Lets MadQTT group & fold
+                        # subagent streams and pair pre/post by tool_use_id.
+                        'agent_id': input_data.get('agent_id', ''),
+                        'agent_type': input_data.get('agent_type', ''),
+                        'tool_use_id': input_data.get('tool_use_id', ''),
                     }),
                     retain=False
                 )
