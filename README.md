@@ -183,11 +183,17 @@ byte-identical to its tier counterpart. That's deliberate:
 - The sidecar is a superset shape: `install.py` preserves madhub's `tier` field,
   madhub keeps the `installedCommands` list it needs.
 
-One asymmetry worth knowing: flags are written deterministically, so a managed
-flag no selected group owns is written `false`. Running `install.py` over a
-madhub `standard` install therefore quiets `mongo_logging` unless you include
-the `mongo` group. The installer warns before writing when it's about to do
-that.
+Two things to know:
+
+- Flags are written deterministically, so a managed flag no selected group owns
+  is written `false`. Running `install.py` over a madhub `standard` install
+  therefore quiets `mongo_logging` unless you include the `mongo` group.
+- Dedupe is by *exact* command string. A hand-rolled entry that runs the same
+  hook with different arguments (say `user_prompt_submit.py --log-only …`) or
+  through a different path isn't recognised as the same wiring, so installing
+  would add a second copy and the hook would fire twice.
+
+The installer warns about both before writing anything.
 
 ## Layout
 

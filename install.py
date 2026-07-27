@@ -252,6 +252,39 @@ def existing_commands(hooks):
     return seen
 
 
+def script_name(command):
+    """The hook script a command invokes, by basename, or None.
+
+    Dedupe is by exact string, so `user_prompt_submit.py --log-only …` and the
+    manifest's argument set are two different commands — and wiring both runs
+    the hook twice. Basename matching is what lets us warn about that, and it
+    sees through path differences too (~/.claude/hooks vs the real clone path).
+    """
+    for token in command.replace('"', " ").replace("'", " ").split():
+        name = token.rsplit("/", 1)[-1]
+        if name.endswith((".py", ".js", ".sh")):
+            return name
+    return None
+
+
+def near_duplicates(expanded, wired):
+    """(script, existing command) pairs where we'd add a second copy of a hook."""
+    hits = []
+    by_script = {}
+    for command in wired:
+        by_script.setdefault(script_name(command), []).append(command)
+    for commands in expanded.values():
+        for command in commands:
+            if command in wired:
+                continue
+            name = script_name(command)
+            if not name:
+                continue
+            for other in by_script.get(name, []):
+                hits.append((name, other))
+    return hits
+
+
 def merge_settings(settings, expanded):
     """Append our commands, skipping any already present. Returns what was added.
 
@@ -478,6 +511,15 @@ def cmd_install(args):
         print("  %s missing : %s (hooks using them will not run)" % (NO, ", ".join(missing_hard)))
     if missing_soft:
         print("  %s optional: %s (those features stay dormant)" % (DOT, ", ".join(missing_soft)))
+
+    dupes = near_duplicates(expanded, existing_commands(settings.get("hooks") or {}))
+    if dupes:
+        print("  %s already wired with different arguments — installing adds a "
+              "second copy, and the hook will run twice:" % NO)
+        for name, other in dupes:
+            print("       %s  vs existing: %s" % (name, other))
+        print("       (remove the existing entry from settings.json first if "
+              "that isn't what you want)")
 
     # Flags are written deterministically: managed key off unless a selected
     # group owns it. Wiring that arrived some other way (a madhub tier, a
