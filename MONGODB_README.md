@@ -15,7 +15,7 @@ If not set, it defaults to `mongodb://localhost:27017/` (local MongoDB instance)
 
 ### Database Name
 The database name is automatically generated from your project directory name. For example:
-- Path: `/Users/d.edens/lab/madness_interactive/Anathesmelt`
+- Path: `~/lab/madness_interactive/Anathesmelt`
 - Database: `claudehooks_Anathesmelt`
 
 This keeps the database name short and compliant with MongoDB's 63-character limit.
