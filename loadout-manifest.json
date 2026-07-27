@@ -1,6 +1,8 @@
 {
   "version": 1,
+  "groupsVersion": 1,
   "description": "Claude Code Loadout catalog. Tiers compose via `extends`. The madnessDesktop installer reads this, expands the chosen tier, substitutes {{HOOKS_DIR}} with the real clone path, and merges the resulting commands into ~/.claude/settings.json. Keep this file in sync with the hooks it references.",
+  "groupsDescription": "Integration groups — the axis install.py installs along (tiers stay the madnessDesktop axis; that installer ignores every key it doesn't know). A group pairs settings.json wiring with the hooks_config.json flags it owns, so `mqtt without mongo` is expressible. INVARIANT: every command string here is byte-identical to its tier counterpart — both installers dedupe by exact command string, which is what lets a madhub tier and an install.py group coexist without duplicate wiring and uninstall cleanly. Groups prefixed `_` are hidden fragments, only reachable via another group's `includes`.",
   "pathToken": "{{HOOKS_DIR}}",
   "tiers": {
     "minimal": {
@@ -84,6 +86,171 @@
         ],
         "UserPromptSubmit": [
           "node {{HOOKS_DIR}}/tinker-mode-tracker.js"
+        ],
+        "Notification": [
+          "titancall notify &"
+        ],
+        "Stop": [
+          "titancall done &"
+        ],
+        "SubagentStop": [
+          "titancall follow &"
+        ],
+        "SessionEnd": [
+          "titancall exit &"
+        ],
+        "PostToolUseFailure": [
+          "titancall error &"
+        ],
+        "TaskCompleted": [
+          "titancall success &"
+        ],
+        "PermissionRequest": [
+          "titancall warn &"
+        ]
+      }
+    }
+  },
+  "groups": {
+    "core": {
+      "label": "Core",
+      "summary": "Session bootstrap, prompt capture + agent naming, stop-hook autocommit. No infrastructure — python3 is enough.",
+      "required": true,
+      "deps": ["python3"],
+      "optional": [],
+      "flags": ["autocommit", "auto_pull_main"],
+      "events": {
+        "SessionStart": [
+          "python3 {{HOOKS_DIR}}/session_start.py"
+        ],
+        "UserPromptSubmit": [
+          "python3 {{HOOKS_DIR}}/user_prompt_submit.py --store-last-prompt --name-agent --inject-context"
+        ],
+        "Stop": [
+          "python3 {{HOOKS_DIR}}/stop.py --autocommit"
+        ]
+      }
+    },
+    "_telemetry": {
+      "label": "Telemetry wiring",
+      "summary": "The full event surface (tool use, subagents, compaction, tasks, permissions, idle). Hidden fragment: pulled in by mongo and mqtt, which are the groups that do something with the events. Also owns tts_notify — subagent_stop.py --notify lives here.",
+      "hidden": true,
+      "deps": ["python3"],
+      "optional": [],
+      "flags": ["tts_notify"],
+      "events": {
+        "PreToolUse": [
+          "python3 {{HOOKS_DIR}}/pre_tool_use.py"
+        ],
+        "PostToolUse": [
+          "python3 {{HOOKS_DIR}}/post_tool_use.py"
+        ],
+        "PostToolUseFailure": [
+          "python3 {{HOOKS_DIR}}/post_tool_use_failure.py"
+        ],
+        "Notification": [
+          "python3 {{HOOKS_DIR}}/notification.py --notify"
+        ],
+        "SubagentStart": [
+          "python3 {{HOOKS_DIR}}/subagent_start.py"
+        ],
+        "SubagentStop": [
+          "python3 {{HOOKS_DIR}}/subagent_stop.py --notify"
+        ],
+        "PreCompact": [
+          "python3 {{HOOKS_DIR}}/pre_compact.py"
+        ],
+        "PostCompact": [
+          "python3 {{HOOKS_DIR}}/post_compact.py"
+        ],
+        "SessionEnd": [
+          "python3 {{HOOKS_DIR}}/session_end.py"
+        ],
+        "TaskCreated": [
+          "python3 {{HOOKS_DIR}}/task_events.py --event created"
+        ],
+        "TaskCompleted": [
+          "python3 {{HOOKS_DIR}}/task_events.py --event completed"
+        ],
+        "PermissionRequest": [
+          "python3 {{HOOKS_DIR}}/permission_events.py --event request"
+        ],
+        "PermissionDenied": [
+          "python3 {{HOOKS_DIR}}/permission_events.py --event denied"
+        ],
+        "TeammateIdle": [
+          "python3 {{HOOKS_DIR}}/teammate_idle.py"
+        ]
+      }
+    },
+    "mongo": {
+      "label": "MongoDB logging",
+      "summary": "Log every hook event into per-project claudehooks_* databases. Needs pymongo + a reachable mongod; no-ops when either is missing.",
+      "deps": ["python3"],
+      "optional": ["pymongo", "mongo"],
+      "includes": ["_telemetry"],
+      "flags": ["mongo_logging", "usage_stats"],
+      "events": {}
+    },
+    "mqtt": {
+      "label": "MQTT broadcast",
+      "summary": "Publish the session/tool/subagent/task lifecycle to status/{DeNa}/claude/# for MadQTT, SwarmDesk and sibling agents. Needs dvttestkit (and mosquitto_pub for retained context topics).",
+      "deps": ["python3"],
+      "optional": ["dvttestkit", "mqtt"],
+      "includes": ["_telemetry"],
+      "flags": [
+        "activity_heartbeat",
+        "notification_mqtt",
+        "session_mqtt",
+        "subagent_mqtt",
+        "compact_mqtt",
+        "permission_mqtt",
+        "teammate_idle_mqtt",
+        "stop_mqtt",
+        "task_mqtt",
+        "usage_stats"
+      ],
+      "events": {}
+    },
+    "omnispindle": {
+      "label": "Omnispindle sync",
+      "summary": "Inject active todos into prompts and mirror Claude tasks into the swarmonomicon todos collection. Wires the task events directly, so it works without mongo or mqtt selected.",
+      "deps": ["python3"],
+      "optional": ["pymongo", "mongo"],
+      "flags": ["context_injection", "task_sync"],
+      "events": {
+        "TaskCreated": [
+          "python3 {{HOOKS_DIR}}/task_events.py --event created"
+        ],
+        "TaskCompleted": [
+          "python3 {{HOOKS_DIR}}/task_events.py --event completed"
+        ]
+      }
+    },
+    "tinker": {
+      "label": "Tinker mode",
+      "summary": "Terse-response persona: activation banner on session start, per-prompt mode tracking. Node scripts, no python involved.",
+      "deps": ["node"],
+      "optional": [],
+      "flags": [],
+      "events": {
+        "SessionStart": [
+          "node {{HOOKS_DIR}}/tinker-activate.js"
+        ],
+        "UserPromptSubmit": [
+          "node {{HOOKS_DIR}}/tinker-mode-tracker.js"
+        ]
+      }
+    },
+    "titancall": {
+      "label": "Titancall push",
+      "summary": "Fire-and-forget push notifications on every lifecycle beat. Needs a titancall binary on PATH; the `&` keeps it off the hook's critical path.",
+      "deps": [],
+      "optional": ["titancall"],
+      "flags": [],
+      "events": {
+        "SessionStart": [
+          "titancall start &"
         ],
         "Notification": [
           "titancall notify &"
