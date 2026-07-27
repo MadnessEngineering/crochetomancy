@@ -148,21 +148,22 @@ def main():
         # MQTT — broadcast task lifecycle on a hierarchical topic
         # Subscribe to status/{DeNa}/claude/task/# for all task events
         # or status/{DeNa}/claude/task/created for just new tasks
-        mqtt_payload = json.dumps({
-            'session_id': session_id,
-            'task_id': task_id,
-            'title': title,
-            'description': description[:300] if description else '',
-            'event': args.event,
-            'cwd': str(Path.cwd()),
-            'timestamp': datetime.utcnow().isoformat()
-        })
+        if _cfg('task_mqtt'):
+            mqtt_payload = json.dumps({
+                'session_id': session_id,
+                'task_id': task_id,
+                'title': title,
+                'description': description[:300] if description else '',
+                'event': args.event,
+                'cwd': str(Path.cwd()),
+                'timestamp': datetime.utcnow().isoformat()
+            })
 
-        post(
-            topic=f"{TASK_TOPIC_PREFIX}/{args.event}",
-            payload=mqtt_payload,
-            retain=False
-        )
+            post(
+                topic=f"{TASK_TOPIC_PREFIX}/{args.event}",
+                payload=mqtt_payload,
+                retain=False
+            )
 
         # Mirror into Omnispindle swarmonomicon todos
         if _cfg('task_sync'):

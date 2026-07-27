@@ -147,8 +147,9 @@ def main():
                 payload=json.dumps(payload),
                 retain=False
             )
-        publish_retained_topic(SESSION_CONTEXT_TOPIC, ended_payload)
-        publish_retained_topic(GIT_CONTEXT_TOPIC, ended_payload)
+        if _cfg('session_mqtt'):
+            publish_retained_topic(SESSION_CONTEXT_TOPIC, ended_payload)
+            publish_retained_topic(GIT_CONTEXT_TOPIC, ended_payload)
         clear_git_context_file()
 
         sys.exit(0)

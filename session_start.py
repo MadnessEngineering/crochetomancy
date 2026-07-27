@@ -53,8 +53,8 @@ _HOOKS_CFG_DEFAULTS = {
     "task_sync": True, "mongo_logging": True, "autocommit": True,
     "notification_mqtt": True, "session_mqtt": True, "subagent_mqtt": True,
     "compact_mqtt": True, "permission_mqtt": True,
-    "teammate_idle_mqtt": True, "stop_mqtt": True,
-    "auto_pull_main": True,
+    "teammate_idle_mqtt": True, "stop_mqtt": True, "task_mqtt": True,
+    "auto_pull_main": True, "usage_stats": True, "tts_notify": True,
 }
 
 def _cfg(key: str, default: bool = True) -> bool:
@@ -65,13 +65,24 @@ def _cfg(key: str, default: bool = True) -> bool:
 
 def refresh_hooks_config():
     """Pull retained MQTT config → write ~/.claude/hooks_config.json.
-    Session start is the natural refresh point; all hook reads then hit the file."""
+    Session start is the natural refresh point; all hook reads then hit the file.
+
+    Precedence: defaults < on-disk file (installer / hand edits) < retained MQTT.
+    Skipping the on-disk layer would reset installer-written `false` flags to
+    `true` on the next session.
+    """
+    try:
+        current = json.loads(_HOOKS_CFG.read_text()) if _HOOKS_CFG.exists() else {}
+        if not isinstance(current, dict):
+            current = {}
+    except Exception:
+        current = {}
     try:
         if _MQTT_GET_AVAILABLE:
             raw = _mqtt_get(topic=_HOOKS_CFG_TOPIC)
             if raw:
                 incoming = json.loads(raw) if isinstance(raw, str) else raw
-                merged = {**_HOOKS_CFG_DEFAULTS, **incoming}
+                merged = {**_HOOKS_CFG_DEFAULTS, **current, **incoming}
                 _HOOKS_CFG.write_text(json.dumps(merged, indent=2))
                 return
     except Exception:
@@ -495,8 +506,9 @@ def main():
         # Emit compact startup context so the model can act immediately on todo sessions.
         additional_context = build_todo_context(session_id, source)
         git_context_payload = build_git_context_payload(session_id, source)
-        publish_retained_topic(SESSION_CONTEXT_TOPIC, git_context_payload)
-        publish_retained_topic(GIT_CONTEXT_TOPIC, git_context_payload)
+        if _cfg('session_mqtt'):
+            publish_retained_topic(SESSION_CONTEXT_TOPIC, git_context_payload)
+            publish_retained_topic(GIT_CONTEXT_TOPIC, git_context_payload)
         save_git_context_file(git_context_payload)
         hook_output = {
             "hookEventName": "SessionStart",

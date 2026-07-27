@@ -209,7 +209,8 @@ def main():
                 pass
 
         # Announce subagent completion via TTS (only if --notify flag is set)
-        if args.notify and _cfg('subagent_mqtt'):
+        # Own flag: TTS is local audio, unrelated to whether MQTT is installed.
+        if args.notify and _cfg('tts_notify'):
             announce_subagent_completion()
 
         sys.exit(0)

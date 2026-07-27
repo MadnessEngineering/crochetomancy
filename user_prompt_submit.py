@@ -145,10 +145,12 @@ def manage_session_data(session_id, prompt, name_agent=False):
 
     # Generate agent name if requested and not already present
     if name_agent and "agent_name" not in session_data:
+        # Resolve helpers next to this hook — cwd is the user's project, not the clone.
+        llm_dir = Path(__file__).parent / "utils" / "llm"
         # Try Ollama first (preferred)
         try:
             result = subprocess.run(
-                ["uv", "run", ".claude/hooks/utils/llm/ollama.py", "--agent-name"],
+                ["uv", "run", str(llm_dir / "ollama.py"), "--agent-name"],
                 capture_output=True,
                 text=True,
                 timeout=5  # Shorter timeout for local Ollama
@@ -165,7 +167,7 @@ def manage_session_data(session_id, prompt, name_agent=False):
             # Fall back to Anthropic if Ollama fails
             try:
                 result = subprocess.run(
-                    ["uv", "run", ".claude/hooks/utils/llm/anth.py", "--agent-name"],
+                    ["uv", "run", str(llm_dir / "anth.py"), "--agent-name"],
                     capture_output=True,
                     text=True,
                     timeout=10
