@@ -207,3 +207,5 @@ MONGODB_README.md        collection reference
 ```
 
 Part of the [Madness Interactive](https://madnessinteractive.cc) workshop.
+
+MIT licensed — see [LICENSE](LICENSE).
