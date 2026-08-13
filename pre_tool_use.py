@@ -35,6 +35,22 @@ def _cfg(key: str, default: bool = True) -> bool:
         return default
 # ───────────────────────────────────────────────────────────────────────────
 
+def _fast_exit(code: int = 0):
+    """Exit without paying interpreter teardown.
+
+    This hook blocks every tool call, and pymongo's shutdown costs ~575ms —
+    roughly 60% of the hook's wall time, for work that is already finished.
+    insert_one is server-acked and paho's QoS-0 publish writes to the socket
+    inline, so nothing is lost by skipping teardown. os._exit does NOT flush
+    stdio, so do that ourselves first.
+    """
+    try:
+        sys.stdout.flush()
+        sys.stderr.flush()
+    except Exception:
+        pass
+    os._exit(code)
+
 def get_mongo_client():
     """Get MongoDB client with configurable URI."""
     if MongoClient is None:
@@ -94,7 +110,7 @@ def main():
 
         # Store data in MongoDB
         if not _cfg('mongo_logging'):
-            sys.exit(0)
+            _fast_exit()
         try:
             client = get_mongo_client()
             db_name = get_database_name()
@@ -127,14 +143,14 @@ def main():
             # Fail silently if MongoDB is not available
             pass
 
-        sys.exit(0)
+        _fast_exit()
 
     except json.JSONDecodeError:
         # Gracefully handle JSON decode errors
-        sys.exit(0)
+        _fast_exit()
     except Exception:
         # Handle any other errors gracefully
-        sys.exit(0)
+        _fast_exit()
 
 if __name__ == '__main__':
     main()

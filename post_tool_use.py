@@ -49,6 +49,20 @@ def _cfg(key: str, default: bool = True) -> bool:
         return default
 # ───────────────────────────────────────────────────────────────────────────
 
+def _fast_exit(code: int = 0):
+    """Exit without paying interpreter teardown.
+
+    Mirrors pre_tool_use.py — see the rationale there. pymongo's shutdown costs
+    ~575ms, which this hook pays on every tool call for work already committed.
+    os._exit does NOT flush stdio, so do that ourselves first.
+    """
+    try:
+        sys.stdout.flush()
+        sys.stderr.flush()
+    except Exception:
+        pass
+    os._exit(code)
+
 def main():
     try:
         # Read JSON input from stdin
@@ -114,14 +128,14 @@ def main():
                 # Fail silently if MongoDB is not available or document not found
                 pass
 
-        sys.exit(0)
+        _fast_exit()
 
     except json.JSONDecodeError:
         # Handle JSON decode errors gracefully
-        sys.exit(0)
+        _fast_exit()
     except Exception:
         # Exit cleanly on any other error
-        sys.exit(0)
+        _fast_exit()
 
 if __name__ == '__main__':
     main()
