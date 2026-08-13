@@ -159,7 +159,10 @@ clear or update it.
 
 Every integration is optional at runtime, not just install time:
 
-- No `pymongo`, or mongod unreachable → Mongo writes skipped (500 ms timeout).
+- No `pymongo` → Mongo writes skipped, no cost. mongod *unreachable* is the
+  expensive case: pymongo burns its full `serverSelectionTimeoutMS` (500 ms)
+  before giving up, and on `pre_tool_use`/`post_tool_use` that is 500 ms **per
+  tool call**. Reachable mongod costs ~0 — see [Cost per tool call](#cost-per-tool-call).
 - No `dvttestkit` → `post()` is a no-op stub.
 - No `mosquitto_pub` → retained context topics skipped; local context file still written for git hooks.
 - No `titancall` / `node` → those commands fail in the background; hook exit codes are unaffected.
@@ -167,6 +170,50 @@ Every integration is optional at runtime, not just install time:
 
 Hooks exit 0 on any internal error by design. A broken integration must never
 block your prompt.
+
+## Cost per tool call
+
+`pre_tool_use.py` and `post_tool_use.py` are the only hooks that fire on *every*
+tool call, and they block the agent loop while they run. Everything else fires
+per session, per prompt, or per subagent, where a few hundred ms is noise.
+
+Measured on macOS / python 3.13, `pre_tool_use.py` end to end:
+
+| Condition | Wall |
+|---|---|
+| mongod reachable (normal) | 0.34 s |
+| mongod refused, or host blackholed | 0.86 s |
+| `mongo_logging=false` | 0.34 s |
+| `mongo_logging` + `activity_heartbeat` both off | 0.34 s |
+
+Two things fall out of that table. The Mongo write itself is ~free when mongod
+answers — turning `mongo_logging` off buys nothing. And the 0.34 s floor is
+almost entirely `import pymongo` (~175 ms) plus `import dvttestkit` (~145 ms),
+which you pay whether or not the flags are on, because both are imported at
+module scope. Actual work is ~15 ms.
+
+### The fast-exit contract
+
+Both hooks end in `_fast_exit()` — flush stdio, then `os._exit(0)` — instead of
+`sys.exit(0)`. **This is deliberate. Do not "clean it up" back to `sys.exit`.**
+
+`sys.exit` runs full interpreter teardown, and pymongo's shutdown alone costs
+~575 ms. That is invisible from inside the script: in-script timestamps show the
+hook finishing in ~15 ms of work, while the process takes ~950 ms. Skipping
+teardown took the hook from 0.95 s to 0.34 s — roughly 31 minutes of blocked
+wall clock reclaimed over a 6-day, ~1800-tool-call window.
+
+Nothing is lost by exiting early:
+
+- `insert_one` / `update_one` are acknowledged by the server before we return.
+- paho's QoS-0 `publish()` writes to the socket inline rather than waiting on a
+  network loop, so the heartbeat is already out.
+- `os._exit` skips atexit handlers **and stdio flush** — hence the explicit
+  flush. Drop it and any `print()` in the hook silently disappears.
+
+To re-measure after changing these hooks: compare `/usr/bin/time -p python3
+pre_tool_use.py` against a timestamp printed from an `atexit` handler. The gap
+between them is teardown, and it is the number that matters.
 
 ## Alternative: install via madhub
 

@@ -106,7 +106,39 @@ The `pre_tool_use.py` and `post_tool_use.py` hooks work together to create a com
    - Status changed to 'complete'
    - The temp file is then deleted
 
-This approach ensures that pre and post data are linked in a single document.
+This approach links pre and post data in a single document **as long as tool
+calls are serial**.
+
+### Known limitation: parallel tool calls orphan the `pre` document
+
+`.claude_temp/last_tool_use_id.txt` holds exactly one id. Claude Code routinely
+issues several tool calls in a single turn, and subagents add more concurrency —
+so a second `pre_tool_use.py` overwrites the file before the first
+`post_tool_use.py` reads it. The loser's document is never updated and stays at
+`status: 'pre'` forever; the winner's document may be updated twice.
+
+This is measurable, not theoretical. Across 12 project databases:
+
+| Database | Total | Stuck at `pre` | % |
+|---|---|---|---|
+| `claudehooks_Inventorium` | 61,861 | 11,518 | 18.6% |
+| `claudehooks_ElementalAlloy` | 17,356 | 4,841 | 27.9% |
+| `claudehooks_AlloyMonorepo` | 8,145 | 2,328 | 28.6% |
+| **all 12** | **142,504** | **29,114** | **20.4%** |
+
+Consequences when querying:
+
+- Filter on `status: 'complete'` for anything that needs output or duration. A
+  bare `find()` over `tool_use` is ~20% orphans.
+- `timestamp_post - timestamp_pre` is only meaningful on completed documents.
+- Counts of tool *invocations* should use `status: 'pre'` plus `'complete'`
+  together; counts of tool *results* should use `'complete'` alone.
+
+`tool_use_id` is already carried on the MQTT heartbeats and would pair the two
+sides correctly. Moving Mongo onto it (id file → per-`tool_use_id` key, or
+writing `pre` and `post` as separate documents joined on `tool_use_id`) is the
+obvious fix, and is deliberately not done here — it changes the collection
+shape, so it wants a decision rather than a drive-by.
 
 ## Error Handling
 
@@ -116,6 +148,15 @@ All hooks fail silently if MongoDB is not available. This ensures that Claude co
 - There are any database errors
 
 The hooks will simply not store data but will not block Claude's operation.
+
+Note that "not available" is not free: an unreachable mongod costs pymongo its
+full `serverSelectionTimeoutMS` (500 ms) per attempt, which on the per-tool-call
+hooks means 500 ms on every tool call. A missing `pymongo` import costs nothing.
+
+`pre_tool_use.py` and `post_tool_use.py` exit via `os._exit(0)` rather than
+`sys.exit(0)` to skip interpreter teardown — see *Cost per tool call* in
+`README.md`. Writes are safe across that early exit because `insert_one` and
+`update_one` are server-acknowledged before the hook returns.
 
 ## Querying Data
 
