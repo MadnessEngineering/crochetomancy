@@ -8,7 +8,9 @@
     "minimal": {
       "label": "Minimal",
       "summary": "Infra-free essentials. No Mongo/MQTT/external binaries — runs anywhere python3 exists.",
-      "deps": ["python3"],
+      "deps": [
+        "python3"
+      ],
       "optional": [],
       "events": {
         "SessionStart": [
@@ -26,8 +28,14 @@
       "label": "Standard",
       "summary": "Minimal + telemetry/logging hooks. Mongo + MQTT used when present, degrade to no-op when absent (import-safe).",
       "extends": "minimal",
-      "deps": ["python3"],
-      "optional": ["pymongo", "mongo", "mqtt"],
+      "deps": [
+        "python3"
+      ],
+      "optional": [
+        "pymongo",
+        "mongo",
+        "mqtt"
+      ],
       "events": {
         "PreToolUse": [
           "python3 {{HOOKS_DIR}}/pre_tool_use.py"
@@ -77,8 +85,14 @@
       "label": "Full",
       "summary": "Standard + machine-specific externals: titancall push notifications and tinker-mode node scripts. Requires node and a titancall binary on PATH.",
       "extends": "standard",
-      "deps": ["python3", "node"],
-      "optional": ["titancall", "dvttestkit"],
+      "deps": [
+        "python3",
+        "node"
+      ],
+      "optional": [
+        "titancall",
+        "dvttestkit"
+      ],
       "events": {
         "SessionStart": [
           "node {{HOOKS_DIR}}/tinker-activate.js",
@@ -116,9 +130,14 @@
       "label": "Core",
       "summary": "Session bootstrap, prompt capture + agent naming, stop-hook autocommit. No infrastructure — python3 is enough.",
       "required": true,
-      "deps": ["python3"],
+      "deps": [
+        "python3"
+      ],
       "optional": [],
-      "flags": ["autocommit", "auto_pull_main"],
+      "flags": [
+        "autocommit",
+        "auto_pull_main"
+      ],
       "events": {
         "SessionStart": [
           "python3 {{HOOKS_DIR}}/session_start.py"
@@ -131,13 +150,37 @@
         ]
       }
     },
+    "guard": {
+      "label": "Guard rails",
+      "summary": "Blocks the three mechanical mistakes measured most costly across 92 sessions: `git add -A`/`.` (swallows unrelated dirty work), verification piped through tail/head/grep (masks the exit code — two false 'tsc clean' reports), and gcloud/bq with an expired token. Pure python3, fail-open on internal error, exit 2 to block. Each rule has its own flag.",
+      "deps": [
+        "python3"
+      ],
+      "optional": [
+        "gcloud"
+      ],
+      "flags": [
+        "guard_git_add_all",
+        "guard_piped_verification",
+        "guard_gcloud_preflight"
+      ],
+      "events": {
+        "PreToolUse": [
+          "python3 {{HOOKS_DIR}}/guard_tool_use.py"
+        ]
+      }
+    },
     "_telemetry": {
       "label": "Telemetry wiring",
       "summary": "The full event surface (tool use, subagents, compaction, tasks, permissions, idle). Hidden fragment: pulled in by mongo and mqtt, which are the groups that do something with the events. Also owns tts_notify — subagent_stop.py --notify lives here.",
       "hidden": true,
-      "deps": ["python3"],
+      "deps": [
+        "python3"
+      ],
       "optional": [],
-      "flags": ["tts_notify"],
+      "flags": [
+        "tts_notify"
+      ],
       "events": {
         "PreToolUse": [
           "python3 {{HOOKS_DIR}}/pre_tool_use.py"
@@ -186,18 +229,35 @@
     "mongo": {
       "label": "MongoDB logging",
       "summary": "Log every hook event into per-project claudehooks_* databases. Needs pymongo + a reachable mongod; no-ops when either is missing.",
-      "deps": ["python3"],
-      "optional": ["pymongo", "mongo"],
-      "includes": ["_telemetry"],
-      "flags": ["mongo_logging", "usage_stats"],
+      "deps": [
+        "python3"
+      ],
+      "optional": [
+        "pymongo",
+        "mongo"
+      ],
+      "includes": [
+        "_telemetry"
+      ],
+      "flags": [
+        "mongo_logging",
+        "usage_stats"
+      ],
       "events": {}
     },
     "mqtt": {
       "label": "MQTT broadcast",
       "summary": "Publish the session/tool/subagent/task lifecycle to status/{DeNa}/claude/# for MadQTT, SwarmDesk and sibling agents. Needs dvttestkit (and mosquitto_pub for retained context topics).",
-      "deps": ["python3"],
-      "optional": ["dvttestkit", "mqtt"],
-      "includes": ["_telemetry"],
+      "deps": [
+        "python3"
+      ],
+      "optional": [
+        "dvttestkit",
+        "mqtt"
+      ],
+      "includes": [
+        "_telemetry"
+      ],
       "flags": [
         "activity_heartbeat",
         "notification_mqtt",
@@ -215,9 +275,17 @@
     "omnispindle": {
       "label": "Omnispindle sync",
       "summary": "Inject active todos into prompts and mirror Claude tasks into the swarmonomicon todos collection. Wires the task events directly, so it works without mongo or mqtt selected.",
-      "deps": ["python3"],
-      "optional": ["pymongo", "mongo"],
-      "flags": ["context_injection", "task_sync"],
+      "deps": [
+        "python3"
+      ],
+      "optional": [
+        "pymongo",
+        "mongo"
+      ],
+      "flags": [
+        "context_injection",
+        "task_sync"
+      ],
       "events": {
         "TaskCreated": [
           "python3 {{HOOKS_DIR}}/task_events.py --event created"
@@ -230,7 +298,9 @@
     "tinker": {
       "label": "Tinker mode",
       "summary": "Terse-response persona: activation banner on session start, per-prompt mode tracking. Node scripts, no python involved.",
-      "deps": ["node"],
+      "deps": [
+        "node"
+      ],
       "optional": [],
       "flags": [],
       "events": {
@@ -246,7 +316,9 @@
       "label": "Titancall push",
       "summary": "Fire-and-forget push notifications on every lifecycle beat. Needs a titancall binary on PATH; the `&` keeps it off the hook's critical path.",
       "deps": [],
-      "optional": ["titancall"],
+      "optional": [
+        "titancall"
+      ],
       "flags": [],
       "events": {
         "SessionStart": [
