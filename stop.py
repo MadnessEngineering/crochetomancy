@@ -167,9 +167,28 @@ def get_llm_completion_message():
     messages = get_completion_messages()
     return random.choice(messages)
 
-def announce_completion():
+def publish_session_stop(session_id: str = "", with_message: bool = False):
+    """Publish the session_stop lifecycle event.
+
+    Always structured JSON with session_id + cwd so downstream session views
+    (Sentinel's Agents grid, MadQTT) can END the session they saw start —
+    the old bare-string payload was unattributable and left sessions
+    "active" forever. The LLM completion message is only generated for
+    --notify (it can cost an ollama call).
+    """
+    payload = {
+        'session_id': session_id,
+        'cwd': str(Path.cwd()),
+        'timestamp': datetime.utcnow().isoformat(),
+    }
+    if with_message:
+        payload['message'] = str(get_llm_completion_message())
+    post(topic=SESSION_STOP_TOPIC, payload=json.dumps(payload), retain=False)
+
+
+def announce_completion(session_id: str = ""):
     """Announce completion using the best available TTS service."""
-    post(topic=SESSION_STOP_TOPIC, payload=str(get_llm_completion_message()), retain=False)
+    publish_session_stop(session_id, with_message=True)
     # try:
     #     tts_script = get_tts_script_path()
     #     if not tts_script:
@@ -375,9 +394,13 @@ def main():
                 except Exception:
                     pass  # Fail silently
 
-        # Announce completion via TTS (only if --notify flag is set)
-        if args.notify and _cfg('stop_mqtt'):
-            announce_completion()
+        # Lifecycle event always (headless one-shots have no --notify but their
+        # sessions still need to end downstream); TTS message only on --notify.
+        if _cfg('stop_mqtt'):
+            if args.notify:
+                announce_completion(session_id)
+            else:
+                publish_session_stop(session_id)
 
         sys.exit(0)
 
