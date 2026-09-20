@@ -22,12 +22,12 @@ except ImportError:
 
 try:
     from dvttestkit.testKitUtils import post
-except ImportError:
+except Exception:  # import connects to the broker; any failure means no MQTT
     def post(*a, **k): pass  # no broker available
 try:
     from dvttestkit.testKitUtils import get as _mqtt_get
     _MQTT_GET_AVAILABLE = True
-except ImportError:
+except Exception:  # import connects to the broker; any failure means no MQTT
     _MQTT_GET_AVAILABLE = False
 
 try:

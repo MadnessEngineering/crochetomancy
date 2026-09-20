@@ -19,7 +19,7 @@ except ImportError:
 try:
     from dvttestkit.testKitUtils import post as _mqtt_post
     _MQTT_AVAILABLE = True
-except ImportError:
+except Exception:  # import connects to the broker; any failure means no MQTT
     _MQTT_AVAILABLE = False
 
 DEVICE_NAME = os.getenv("DeNa", "macbook")
