@@ -24,6 +24,18 @@ try:
 except ImportError:
     pass  # dotenv is optional
 
+try:
+    from dvttestkit.testKitUtils import post
+except Exception:  # import connects to the broker; any failure means no MQTT
+    def post(*a, **k): pass  # no broker available
+
+DEVICE_NAME = os.getenv("DeNa", "macbook")
+USER_PROMPT_TOPIC = f"status/{DEVICE_NAME}/claude/user_prompt"
+# Prompt TEXT goes to the (anonymous) broker only when a machine opts in —
+# meant for headless fleet boxes (the sentinel VM) whose session viewers want
+# content, never as a default for interactive dev machines.
+MQTT_CONTENT = os.getenv("CLAUDE_HOOKS_MQTT_CONTENT", "") == "1"
+
 # Omnispindle project names derived from cwd path parts
 _PROJECT_NAMES = {
     'omnispindle', 'inventorium', 'anathesmelt', 'swarmdesk',
@@ -239,6 +251,19 @@ def main():
         # Log the user prompt
         if _cfg('mongo_logging'):
             log_user_prompt(session_id, input_data)
+
+        # Opt-in MQTT publish of the prompt head, so fleet session viewers
+        # (Sentinel Agents grid, MadQTT) can show WHAT a session was asked.
+        if MQTT_CONTENT and _cfg('session_mqtt'):
+            try:
+                post(topic=USER_PROMPT_TOPIC, payload=json.dumps({
+                    'session_id': session_id,
+                    'cwd': str(Path.cwd()),
+                    'timestamp': datetime.utcnow().isoformat(),
+                    'prompt': str(prompt)[:400],
+                }), retain=False)
+            except Exception:
+                pass  # telemetry must never block the prompt
 
         # Manage session data with JSON structure
         session_data = None

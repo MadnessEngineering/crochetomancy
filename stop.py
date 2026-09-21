@@ -167,7 +167,41 @@ def get_llm_completion_message():
     messages = get_completion_messages()
     return random.choice(messages)
 
-def publish_session_stop(session_id: str = "", with_message: bool = False):
+def _last_assistant_text(transcript_path):
+    """Last assistant text in a Claude Code transcript jsonl, or None."""
+    try:
+        if not transcript_path or not os.path.exists(transcript_path):
+            return None
+        last = None
+        with open(transcript_path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                msg = entry.get('message') or entry
+                role = msg.get('role') or entry.get('type')
+                if role != 'assistant':
+                    continue
+                content = msg.get('content')
+                if isinstance(content, str) and content.strip():
+                    last = content
+                elif isinstance(content, list):
+                    text = '\n'.join(
+                        c.get('text', '') for c in content
+                        if isinstance(c, dict) and c.get('type') == 'text'
+                    )
+                    if text.strip():
+                        last = text
+        return last
+    except Exception:
+        return None
+
+
+def publish_session_stop(session_id: str = "", with_message: bool = False, transcript_path: str = ""):
     """Publish the session_stop lifecycle event.
 
     Always structured JSON with session_id + cwd so downstream session views
@@ -175,6 +209,10 @@ def publish_session_stop(session_id: str = "", with_message: bool = False):
     the old bare-string payload was unattributable and left sessions
     "active" forever. The LLM completion message is only generated for
     --notify (it can cost an ollama call).
+
+    Response TEXT rides along only when CLAUDE_HOOKS_MQTT_CONTENT=1 — an
+    opt-in for headless fleet boxes whose session viewers want content,
+    never a default for interactive dev machines (the broker is anonymous).
     """
     payload = {
         'session_id': session_id,
@@ -183,6 +221,10 @@ def publish_session_stop(session_id: str = "", with_message: bool = False):
     }
     if with_message:
         payload['message'] = str(get_llm_completion_message())
+    if os.getenv('CLAUDE_HOOKS_MQTT_CONTENT', '') == '1':
+        tail = _last_assistant_text(transcript_path)
+        if tail:
+            payload['response'] = tail[:400]
     post(topic=SESSION_STOP_TOPIC, payload=json.dumps(payload), retain=False)
 
 
@@ -397,10 +439,11 @@ def main():
         # Lifecycle event always (headless one-shots have no --notify but their
         # sessions still need to end downstream); TTS message only on --notify.
         if _cfg('stop_mqtt'):
+            tpath = input_data.get('transcript_path', '')
             if args.notify:
-                announce_completion(session_id)
+                publish_session_stop(session_id, with_message=True, transcript_path=tpath)
             else:
-                publish_session_stop(session_id)
+                publish_session_stop(session_id, transcript_path=tpath)
 
         sys.exit(0)
 
