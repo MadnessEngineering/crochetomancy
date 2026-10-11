@@ -31,6 +31,7 @@ except Exception:  # import connects to the broker; any failure means no MQTT
     _MQTT_GET_AVAILABLE = False
 
 from utils.session_color import apply_session_color
+from utils.fork_window import open_fork_window
 
 try:
     from dotenv import load_dotenv
@@ -514,6 +515,8 @@ def main():
         save_git_context_file(git_context_payload)
         if _cfg('session_color'):
             apply_session_color(input_data)
+        if _cfg('fork_warp_window'):
+            open_fork_window(input_data)
         hook_output = {
             "hookEventName": "SessionStart",
             "sessionTitle": session_title,

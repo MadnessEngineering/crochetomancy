@@ -36,7 +36,9 @@ DEFAULT_PROJECT_COLORS = {
     "madnessdesktop": "yellow",
 }
 
-CLAUDE_DIR = Path.home() / ".claude"
+# Honor profile aliases (e.g. `emclau` → CLAUDE_CONFIG_DIR=…/claude-work-remote):
+# jobs/ and per-profile overrides live under whichever config dir launched us.
+CLAUDE_DIR = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
 OVERRIDES_FILE = CLAUDE_DIR / "session_colors.json"
 MARKER_DIR = CLAUDE_DIR / "data" / "session-colors"
 
