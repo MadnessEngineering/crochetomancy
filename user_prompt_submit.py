@@ -18,6 +18,8 @@ try:
 except ImportError:
     MongoClient = None  # no mongo available
 
+from utils.session_color import apply_session_color
+
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -264,6 +266,11 @@ def main():
                 }), retain=False)
             except Exception:
                 pass  # telemetry must never block the prompt
+
+        # Retry session color each prompt: the transcript / job state.json may not
+        # exist yet at SessionStart. Idempotent, and a user /color always wins.
+        if _cfg('session_color'):
+            apply_session_color(input_data)
 
         # Manage session data with JSON structure
         session_data = None

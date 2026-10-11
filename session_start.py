@@ -30,6 +30,8 @@ try:
 except Exception:  # import connects to the broker; any failure means no MQTT
     _MQTT_GET_AVAILABLE = False
 
+from utils.session_color import apply_session_color
+
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -510,6 +512,8 @@ def main():
             publish_retained_topic(SESSION_CONTEXT_TOPIC, git_context_payload)
             publish_retained_topic(GIT_CONTEXT_TOPIC, git_context_payload)
         save_git_context_file(git_context_payload)
+        if _cfg('session_color'):
+            apply_session_color(input_data)
         hook_output = {
             "hookEventName": "SessionStart",
             "sessionTitle": session_title,

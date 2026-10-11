@@ -26,6 +26,8 @@ try:
 except Exception:  # import connects to the broker; any failure means no MQTT
     def post(*a, **k): pass  # no broker available
 
+from utils.session_color import apply_session_color
+
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -335,6 +337,10 @@ def main():
 
         # Read JSON input from stdin
         input_data = json.load(sys.stdin)
+
+        # First point the transcript reliably exists — stamps the resume color.
+        if _cfg('session_color'):
+            apply_session_color(input_data)
 
         # Handle git operations
         if (args.autocommit or args.commit_template) and _cfg('autocommit') and is_git_repository():
