@@ -11,6 +11,9 @@ Warp quirks (verified against Warp v0.2025.10.29):
     `~/.warp/launch_configurations/`. Absolute paths are rejected
     ("couldn't turn launch link into path") and subfolders don't launch,
     so configs live top-level as `claude-fork-<id8>.yaml` and get pruned.
+  - The config's `name:` must equal the file stem, or Warp logs
+    "couldn't find a matching file path" (v0.2026.10.07; every fork
+    before this fix failed that way).
   - A freshly written config only resolves once Warp's watcher indexes
     it, so the open runs from a detached `sleep 3`.
   - The window opens without stealing focus from a quake-mode terminal.
@@ -73,9 +76,11 @@ def _write_launch_config(short_id, cwd, project, color):
     config_dir = os.environ.get("CLAUDE_CONFIG_DIR")
     if config_dir:
         attach = f"CLAUDE_CONFIG_DIR={shlex.quote(config_dir)} {attach}"
+    stem = f"{CONFIG_PREFIX}{short_id}"
     lines = [
         "---",
-        f"name: {q(f'claude fork {project} {short_id}')}",
+        # Warp resolves warp://launch/<file> by config name — must equal the file stem.
+        f"name: {stem}",
         "windows:",
         "  - tabs:",
         f"      - title: {q(f'⑂ {project} {short_id}')}",
@@ -85,7 +90,7 @@ def _write_launch_config(short_id, cwd, project, color):
         "          commands:",
         f"            - exec: {q(attach)}",
     ]
-    path = LAUNCH_DIR / f"{CONFIG_PREFIX}{short_id}.yaml"
+    path = LAUNCH_DIR / f"{stem}.yaml"
     path.write_text("\n".join(lines) + "\n")
     return path
 
