@@ -63,10 +63,27 @@ def _fallback_snapshot(cwd):
     return snap
 
 
+def _madhub_with_snapshot():
+    """Path to a madhub that knows `snapshot`, else None.
+
+    An installed madhub that predates the command treats `snapshot` as a path
+    and opens the app on an "Add Local Repository" dialog, so check the usage
+    text first (`--help` only prints and exits).
+    """
+    madhub = shutil.which("madhub")
+    if not madhub:
+        return None
+    try:
+        r = subprocess.run([madhub, "--help"], capture_output=True, text=True, timeout=TIMEOUT_S)
+        return madhub if "madhub snapshot" in (r.stdout + r.stderr) else None
+    except Exception:
+        return None
+
+
 def take_snapshot(cwd=None):
     """Return one repo snapshot dict, or None outside a repo."""
     cwd = Path(cwd or Path.cwd())
-    madhub = shutil.which("madhub")
+    madhub = _madhub_with_snapshot()
     if madhub:
         try:
             r = subprocess.run([madhub, "snapshot", "--json", str(cwd)],
