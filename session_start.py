@@ -58,6 +58,9 @@ _HOOKS_CFG_DEFAULTS = {
     "compact_mqtt": True, "permission_mqtt": True,
     "teammate_idle_mqtt": True, "stop_mqtt": True, "task_mqtt": True,
     "auto_pull_main": True, "usage_stats": True, "tts_notify": True,
+    # Git-aware work context (work_context.py). Off until compared in
+    # madnessDesktop's preload sampler.
+    "git_context_injection": False,
 }
 
 def _cfg(key: str, default: bool = True) -> bool:
@@ -508,6 +511,15 @@ def main():
 
         # Emit compact startup context so the model can act immediately on todo sessions.
         additional_context = build_todo_context(session_id, source)
+        # A resumed session already has its context; inject on fresh starts only.
+        if _cfg('git_context_injection', False) and source != 'resume':
+            try:
+                from work_context import build_work_context
+                work_block, _debug = build_work_context()
+                if work_block:
+                    additional_context = f"{additional_context}\n{work_block}"
+            except Exception:
+                pass
         git_context_payload = build_git_context_payload(session_id, source)
         if _cfg('session_mqtt'):
             publish_retained_topic(SESSION_CONTEXT_TOPIC, git_context_payload)
