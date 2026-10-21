@@ -44,6 +44,8 @@ _PROJECT_NAMES = {
     'swarmonomicon', 'todomill_projectorium', 'hammerspoon',
     'madness_interactive', 'chrome-devtools-mcp', 'lab',
 }
+# Workshop-wide parent dirs: a cwd may sit inside them, but they never name a repo.
+_UMBRELLA_NAMES = {'madness_interactive', 'lab'}
 
 # ── feature flags ──────────────────────────────────────────────────────────
 _HOOKS_CFG = Path.home() / '.claude' / 'hooks_config.json'
@@ -54,13 +56,36 @@ def _cfg(key: str, default: bool = True) -> bool:
         return default
 # ───────────────────────────────────────────────────────────────────────────
 
-def detect_project():
-    """Derive Omnispindle project name from current working directory."""
-    parts = [p.lower().replace('-', '_') for p in Path.cwd().parts]
+def detect_project(cwd=None):
+    """Derive Omnispindle project name from current working directory.
+
+    The nearest enclosing git repo wins (its directory name, lowercased), so a
+    repo missing from _PROJECT_NAMES no longer falls through to a parent that
+    is listed (madnessDesktop used to resolve to 'madness_interactive').
+    Claude worktrees under <repo>/.claude/worktrees/<name> resolve to <repo>.
+    """
+    cwd = Path(cwd or Path.cwd()).resolve()
+    if '.claude' in cwd.parts:
+        i = cwd.parts.index('.claude')
+        if cwd.parts[i + 1:i + 2] == ('worktrees',):
+            cwd = Path(*cwd.parts[:i])
+    norm = lambda s: s.lower().replace('-', '_')
+    for d in (cwd, *cwd.parents):
+        if (d / '.git').exists() and d != Path.home():
+            name = norm(d.name)
+            if name in _PROJECT_NAMES:
+                return name
+            # A nested repo inside a known project (Anathesmelt/claude-prime/hooks)
+            # belongs to that project; umbrella dirs never claim a repo.
+            for a in d.parents:
+                if norm(a.name) in _PROJECT_NAMES - _UMBRELLA_NAMES:
+                    return norm(a.name)
+            return name
+    parts = [p.lower().replace('-', '_') for p in cwd.parts]
     for part in reversed(parts):
         if part in _PROJECT_NAMES:
             return part
-    return Path.cwd().name.lower().replace('-', '_')
+    return cwd.name.lower().replace('-', '_')
 
 
 def fetch_omnispindle_context(project: str) -> str | None:
