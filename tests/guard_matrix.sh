@@ -46,6 +46,40 @@ run 0 'npm run check; echo exit=$?'
 run 0 'npm run build 2>&1 | grep stamping'               # build is not a verification
 run 0 'tail -f /tmp/run-suite.log'
 run 0 'git log --oneline | head -3'
+# masking forms the regex version missed or only half-caught
+run 2 'npx tsc --noEmit | tee tsc.log'
+run 2 'n=$(npm test 2>&1 | grep -c FAIL); echo $n'
+run 2 'bash -c "pytest -q | tail -3"'
+run 2 'CI=true npx react-scripts test --watchAll=false 2>&1 | tail -20'
+run 2 'uv run -q pytest tests/ | tail -5'
+run 2 '.venv/bin/python -m pytest -q | grep passed'
+run 2 'pnpm lint:fix | tail -3'
+run 2 "$(printf 'git commit -q -F - <<'"'"'EOF'"'"' && npm test | tail -3\nmsg body\nEOF')"   # heredoc keeps its opening line
+
+echo "── piped-verification false positives (git archaeology 2026-10-21, 36 of 36 were these) ──"
+run 0 'npx tsc --noEmit -p . > $S/tsc17.txt 2>&1; echo tsc_exit=$?; git status --short | grep -v claude'
+run 0 'npm test > /tmp/repro.txt 2>&1; echo "EXIT=$?"; grep -E "not ok [0-9]" /tmp/repro.txt | head'
+run 0 "grep -n -e '\"lint' -e '\"tsc' -e '\"test' package.json | head; ls scripts | head -30"
+run 0 'cat jest.config.* | head -40; git ls-files | grep -E "\.test\.tsx?$"'
+run 0 "git grep -ln \"jest.mock('three'\" -- src | head"
+run 0 'ls vitest*.config.* 2>/dev/null; grep -nE "setupFiles|env" vitest*.config.* | head'
+run 0 'cat $S/tsc.txt; git stash list | head -2'
+run 0 'pytest -q 2>&1 | grep -E "passed|failed"; echo "exit=${pipestatus[1]}"'   # zsh spelling
+run 0 '(time npx jest > $S/base.log 2>&1; echo "jest exit=$?") 2>&1 | tail -6'
+run 0 'npx tsc --version | head -1'
+run 0 'npx jest --listTests | wc -l'
+run 0 "$(printf '# 1) run the suite (read-only git show)\nnpx jest x.test.ts > $SP/out.txt 2>&1; echo exit=$?\nls server/zz-* 2>&1 | head -2')"
+
+echo "── git-add-all: fresh repos created by the same command ──"
+run 0 'cd $SP && rm -rf lit && mkdir lit && cd lit && git init -q && echo a > f && git add . && git commit -qm x'
+run 0 'git clone -q https://example.com/r.git $P; cd $P && git add -A && git status --short | wc -l'
+run 2 'git add -A && git init'                                   # init AFTER the add exempts nothing
+run 2 'git -c user.name=t add -A'
+run 2 'git add -Av'
+run 2 'git add :/'
+run 0 'git add -- src/a.ts'
+run 0 'git add --dry-run -A >/dev/null 2>&1; echo "dry-run exit=$?"'   # lists, stages nothing
+run 0 'git add -nA'
 
 echo "── prose is not a command ──"
 run 0 "$(printf 'git commit -q -F - <<'"'"'MSG'"'"'\nTalks about gcloud / bq, git add -A, and tsc | tail in prose.\nMSG\necho done')"
