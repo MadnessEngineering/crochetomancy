@@ -32,6 +32,7 @@ except Exception:  # import connects to the broker; any failure means no MQTT
 
 from utils.session_color import apply_session_color
 from utils.fork_window import open_fork_window
+from utils.omnispindle_db import omnispindle_user_db_name
 
 try:
     from dotenv import load_dotenv
@@ -293,9 +294,15 @@ def find_todo_by_id(todo_id):
     We intentionally fail soft if no matching database/collection is available.
     """
     client = None
+    if MongoClient is None:
+        return None
     try:
-        client = get_mongo_client()
+        # Todos live in the Omnispindle store (MONGODB_URI), not the local
+        # hook-logging Mongo that get_mongo_client() points at.
+        client = MongoClient(os.getenv('MONGODB_URI', 'mongodb://localhost:27017/'),
+                             serverSelectionTimeoutMS=2000)
         preferred = [name for name in [
+            omnispindle_user_db_name(),
             os.getenv("OMNISPINDLE_DB"),
             os.getenv("OMNISPINDLE_DB_NAME"),
             "omnispindle",

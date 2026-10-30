@@ -19,6 +19,7 @@ except ImportError:
     MongoClient = None  # no mongo available
 
 from utils.session_color import apply_session_color
+from utils.omnispindle_db import omnispindle_user_db_name
 
 try:
     from dotenv import load_dotenv
@@ -89,11 +90,13 @@ def detect_project(cwd=None):
 
 
 def fetch_omnispindle_context(project: str) -> str | None:
-    """Query swarmonomicon todos for active items in this project.
+    """Query the user's Omnispindle todos for active items in this project.
     Returns a compact context string, or None if unavailable."""
+    db_name = omnispindle_user_db_name()
+    if not db_name:
+        return None
     try:
         mongo_uri = os.getenv('MONGODB_URI', 'mongodb://localhost:27017/')
-        db_name = os.getenv('MONGODB_DB', 'swarmonomicon')
         client = MongoClient(mongo_uri, serverSelectionTimeoutMS=2000)
         db = client[db_name]
 
