@@ -22,10 +22,17 @@ Skips silently unless: macOS, Warp installed, source == "fork", and the
 session is a background job (has `<config dir>/jobs/<id8>/`) — a foreground
 fork is already in front of you. The config dir follows CLAUDE_CONFIG_DIR, so
 a fork from a profile alias (`emclau`) attaches back into that profile.
+
+Shellomancy (our Warp fork) first: when a Shellomancy app with local control is
+running, the fork opens as a new TAB there via its local-control API
+(`shellomancy_client.open_tab`), no launch config or watcher delay. If it isn't
+running or anything fails, the Warp window path above runs instead. Disable with
+`"fork_shellomancy": false` in hooks_config.
 """
 
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -40,6 +47,12 @@ CONFIG_PREFIX = "claude-fork-"
 PRUNE_AFTER_SECONDS = 24 * 3600
 OPEN_DELAY_SECONDS = 3
 WARP_APP_GLOBS = ("/Applications/Warp*.app", str(Path.home() / "Applications" / "Warp*.app"))
+SHELLOMANCY_CLIENT_DIR = (
+    Path(os.environ.get("SEAT_OF_MADNESS", Path.home() / "lab" / "madness_interactive"))
+    / "projects" / "common" / "shellomancy" / "script" / "shellomancy_client"
+)
+# Session ids are UUIDs; the id8 goes into a shell command, so accept hex only.
+SHORT_ID_RE = re.compile(r"[0-9a-f]{8}")
 
 # Warp tab colors are ANSI-named; map Claude Code's /color palette onto them.
 WARP_TAB_COLORS = {
@@ -66,16 +79,53 @@ def _prune_old_configs():
             pass
 
 
-def _write_launch_config(short_id, cwd, project, color):
-    # JSON strings are valid YAML scalars — sidesteps quoting paths/titles by hand.
-    def q(s): return json.dumps(s, ensure_ascii=False)
+def _attach_command(short_id):
     claude = shutil.which("claude") or "claude"
-    attach = f"{claude} attach {short_id}"
+    attach = f"{shlex.quote(claude)} attach {short_id}"
     # Non-default profile (e.g. `emclau`): attach through the same config dir,
     # or the fork is invisible to the default daemon.
     config_dir = os.environ.get("CLAUDE_CONFIG_DIR")
     if config_dir:
         attach = f"CLAUDE_CONFIG_DIR={shlex.quote(config_dir)} {attach}"
+    return attach
+
+
+def _shellomancy_client():
+    """Import the Shellomancy client from the lab checkout, or None."""
+    if not (SHELLOMANCY_CLIENT_DIR / "shellomancy_client.py").is_file():
+        return None
+    if str(SHELLOMANCY_CLIENT_DIR) not in sys.path:
+        sys.path.insert(0, str(SHELLOMANCY_CLIENT_DIR))
+    try:
+        import shellomancy_client
+    except Exception:
+        return None
+    return shellomancy_client
+
+
+def open_fork_in_shellomancy(short_id, cwd, project, color):
+    """Open the fork as a Shellomancy tab. True only if the app accepted it."""
+    client = _shellomancy_client()
+    if client is None:
+        return False
+    try:
+        if not client.list_instances():
+            return False
+        client.open_tab(
+            command=_attach_command(short_id),
+            cwd=str(cwd),
+            title=f"⑂ {project} {short_id}",
+            color=WARP_TAB_COLORS.get(color, "blue"),
+        )
+        return True
+    except Exception:
+        return False
+
+
+def _write_launch_config(short_id, cwd, project, color):
+    # JSON strings are valid YAML scalars — sidesteps quoting paths/titles by hand.
+    def q(s): return json.dumps(s, ensure_ascii=False)
+    attach = _attach_command(short_id)
     stem = f"{CONFIG_PREFIX}{short_id}"
     lines = [
         "---",
@@ -95,22 +145,26 @@ def _write_launch_config(short_id, cwd, project, color):
     return path
 
 
-def open_fork_window(input_data):
-    """Returns the launch config path when a window was requested, else None."""
+def open_fork_window(input_data, use_shellomancy=True):
+    """Returns "shellomancy" when a Shellomancy tab opened, the launch config
+    path when a Warp window was requested, else None."""
     try:
         if sys.platform != "darwin" or input_data.get("source") != "fork":
             return None
         session_id = input_data.get("session_id") or ""
         short_id = session_id[:8]
-        if not short_id or not (CLAUDE_DIR / "jobs" / short_id).is_dir():
-            return None
-        if not warp_installed():
+        if not SHORT_ID_RE.fullmatch(short_id) or not (CLAUDE_DIR / "jobs" / short_id).is_dir():
             return None
         cwd = input_data.get("cwd") or str(Path.cwd())
         project = detect_project(cwd)
+        color = color_for_project(project)
+        if use_shellomancy and open_fork_in_shellomancy(short_id, cwd, project, color):
+            return "shellomancy"
+        if not warp_installed():
+            return None
         LAUNCH_DIR.mkdir(parents=True, exist_ok=True)
         _prune_old_configs()
-        path = _write_launch_config(short_id, cwd, project, color_for_project(project))
+        path = _write_launch_config(short_id, cwd, project, color)
         # Detached delay: a brand-new config isn't resolvable until Warp's
         # file watcher indexes it (immediate opens silently no-op ~half the time).
         subprocess.Popen(

@@ -535,7 +535,7 @@ def main():
         if _cfg('session_color'):
             apply_session_color(input_data)
         if _cfg('fork_warp_window'):
-            open_fork_window(input_data)
+            open_fork_window(input_data, use_shellomancy=_cfg('fork_shellomancy'))
         hook_output = {
             "hookEventName": "SessionStart",
             "sessionTitle": session_title,
