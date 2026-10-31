@@ -28,8 +28,8 @@ except ImportError:
     pass  # dotenv is optional
 
 try:
-    from dvttestkit.testKitUtils import post
-except Exception:  # import connects to the broker; any failure means no MQTT
+    from utils.mqtt_publish import publish as post
+except Exception:  # utils.mqtt_publish is stdlib-only; this guard is belt and braces
     def post(*a, **k): pass  # no broker available
 
 DEVICE_NAME = os.getenv("DeNa", "macbook")

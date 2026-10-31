@@ -20,9 +20,9 @@ try:
 except ImportError:
     MongoClient = None  # no mongo available
 try:
-    from dvttestkit.testKitUtils import post as _post
-    from dvttestkit.testKitUtils import get as _get
-except Exception:  # import connects to the broker; any failure means no MQTT
+    from utils.mqtt_publish import publish as _post
+    from utils.mqtt_publish import get as _get
+except Exception:  # utils.mqtt_publish is stdlib-only; this guard is belt and braces
     def _post(*a, **k): pass
     def _get(*a, **k): return None
 try:

@@ -21,13 +21,13 @@ except ImportError:
     MongoClient = None  # no mongo available
 
 try:
-    from dvttestkit.testKitUtils import post
-except Exception:  # import connects to the broker; any failure means no MQTT
+    from utils.mqtt_publish import publish as post
+except Exception:  # utils.mqtt_publish is stdlib-only; this guard is belt and braces
     def post(*a, **k): pass  # no broker available
 try:
-    from dvttestkit.testKitUtils import get as _mqtt_get
+    from utils.mqtt_publish import get as _mqtt_get
     _MQTT_GET_AVAILABLE = True
-except Exception:  # import connects to the broker; any failure means no MQTT
+except Exception:  # utils.mqtt_publish is stdlib-only; this guard is belt and braces
     _MQTT_GET_AVAILABLE = False
 
 from utils.session_color import apply_session_color
@@ -43,7 +43,6 @@ except ImportError:
 UUID_PATTERN = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$"
 )
-MQTT_HOST = os.getenv("MADNESS_MQTT_HOST", "localhost")
 DEVICE_NAME = os.getenv("DeNa", "macbook")
 SESSION_CONTEXT_TOPIC = f"status/{DEVICE_NAME}/claude/session/context"
 GIT_CONTEXT_TOPIC = f"status/{DEVICE_NAME}/claude/git/context"
@@ -422,15 +421,8 @@ def build_git_context_payload(session_id, source):
 
 def publish_retained_topic(topic, payload):
     """Publish retained MQTT payload. Fails silently."""
-    try:
-        subprocess.run(
-            ["mosquitto_pub", "-h", MQTT_HOST, "-t", topic, "-m", json.dumps(payload), "-r"],
-            capture_output=True,
-            timeout=3,
-            text=True,
-        )
-    except Exception:
-        pass
+    from utils.mqtt_publish import publish
+    publish(topic, payload, retain=True)
 
 
 def save_git_context_file(payload):

@@ -17,9 +17,9 @@ except ImportError:
     MongoClient = None  # no mongo available
 
 try:
-    from dvttestkit.testKitUtils import post as _mqtt_post
+    from utils.mqtt_publish import publish as _mqtt_post
     _MQTT_AVAILABLE = True
-except Exception:  # import connects to the broker; any failure means no MQTT
+except Exception:  # utils.mqtt_publish is stdlib-only; this guard is belt and braces
     _MQTT_AVAILABLE = False
 
 DEVICE_NAME = os.getenv("DeNa", "macbook")

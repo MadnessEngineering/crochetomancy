@@ -19,8 +19,8 @@ except ImportError:
     MongoClient = None  # no mongo available
 
 try:
-    from dvttestkit.testKitUtils import post
-except Exception:  # import connects to the broker; any failure means no MQTT
+    from utils.mqtt_publish import publish as post
+except Exception:  # utils.mqtt_publish is stdlib-only; this guard is belt and braces
     def post(*a, **k): pass  # no broker available
 
 try:
@@ -35,7 +35,6 @@ try:
 except ImportError:
     pass
 
-MQTT_HOST = os.getenv("MADNESS_MQTT_HOST", "localhost")
 DEVICE_NAME = os.getenv("DeNa", "macbook")
 SESSION_CONTEXT_TOPIC = f"status/{DEVICE_NAME}/claude/session/context"
 GIT_CONTEXT_TOPIC = f"status/{DEVICE_NAME}/claude/git/context"
@@ -68,15 +67,8 @@ def git_push():
 
 def publish_retained_topic(topic, payload):
     """Publish retained MQTT payload. Fails silently."""
-    try:
-        subprocess.run(
-            ["mosquitto_pub", "-h", MQTT_HOST, "-t", topic, "-m", json.dumps(payload), "-r"],
-            capture_output=True,
-            timeout=3,
-            text=True,
-        )
-    except Exception:
-        pass
+    from utils.mqtt_publish import publish
+    publish(topic, payload, retain=True)
 
 
 def clear_git_context_file():

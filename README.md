@@ -37,11 +37,13 @@ already in place, so it only wires it up.
 
 ```bash
 pip install pymongo      # Mongo logging + Omnispindle todo sync
-pip install dvttestkit   # MQTT publishing (plus mosquitto_pub for retained topics)
 ```
 
-Both imports are wrapped — without them the affected hooks return quietly
-instead of failing, and Claude Code never sees an error.
+The import is wrapped — without it the affected hooks return quietly instead
+of failing, and Claude Code never sees an error. MQTT needs no package:
+`utils/mqtt_publish.py` is a small stdlib MQTT 3.1.1 client. Point it at your
+broker with `MADNESS_MQTT_HOST` / `MADNESS_MQTT_PORT` (default
+`localhost:1883`).
 
 ## Groups
 
@@ -49,7 +51,7 @@ instead of failing, and Claude Code never sees an error.
 |---|---|---|
 | `core` *(always installed)* | python3 | Session bootstrap + todo context, prompt capture, agent auto-naming, stop-hook autocommit |
 | `mongo` | `pymongo` + a mongod | Every event logged into per-project `claudehooks_*` databases |
-| `mqtt` | `dvttestkit`, `mosquitto_pub` | The whole lifecycle published to `status/{DeNa}/claude/#` |
+| `mqtt` | a broker at `MADNESS_MQTT_HOST:MADNESS_MQTT_PORT` | The whole lifecycle published to `status/{DeNa}/claude/#` |
 | `omnispindle` | `pymongo` + a mongod | Active todos injected into prompts; Claude tasks mirrored into the `swarmonomicon` todos collection |
 | `tinker` | node | Tinker-mode persona: activation banner, per-prompt mode tracking |
 | `titancall` | a `titancall` binary | Fire-and-forget push notifications on every lifecycle beat |
@@ -163,8 +165,9 @@ Every integration is optional at runtime, not just install time:
   expensive case: pymongo burns its full `serverSelectionTimeoutMS` (500 ms)
   before giving up, and on `pre_tool_use`/`post_tool_use` that is 500 ms **per
   tool call**. Reachable mongod costs ~0 — see [Cost per tool call](#cost-per-tool-call).
-- No `dvttestkit` → `post()` is a no-op stub.
-- No `mosquitto_pub` → retained context topics skipped; local context file still written for git hooks.
+- Broker unreachable → the first publish times out (0.5 s), then every hook
+  skips MQTT for 60 s (`~/.claude/.mqtt_down` marker), so an offline laptop
+  pays one timeout a minute, not one per tool call.
 - No `titancall` / `node` → those commands fail in the background; hook exit codes are unaffected.
 - No TTS engine or API key → announcements skipped silently.
 
@@ -188,9 +191,11 @@ Measured on macOS / python 3.13, `pre_tool_use.py` end to end:
 
 Two things fall out of that table. The Mongo write itself is ~free when mongod
 answers — turning `mongo_logging` off buys nothing. And the 0.34 s floor is
-almost entirely `import pymongo` (~175 ms) plus `import dvttestkit` (~145 ms),
-which you pay whether or not the flags are on, because both are imported at
-module scope. Actual work is ~15 ms.
+mostly `import pymongo` (~175 ms) plus, at the time of measurement,
+`import dvttestkit` (~145 ms); both were imported at module scope, so you paid
+them whether or not the flags were on. Actual work is ~15 ms. MQTT now uses
+the stdlib publisher in `utils/mqtt_publish.py` instead of dvttestkit; these
+numbers haven't been re-measured since.
 
 ### The fast-exit contract
 
@@ -206,8 +211,8 @@ wall clock reclaimed over a 6-day, ~1800-tool-call window.
 Nothing is lost by exiting early:
 
 - `insert_one` / `update_one` are acknowledged by the server before we return.
-- paho's QoS-0 `publish()` writes to the socket inline rather than waiting on a
-  network loop, so the heartbeat is already out.
+- `utils.mqtt_publish.publish()` sends the QoS-0 PUBLISH and DISCONNECT on its
+  own socket before returning, so the heartbeat is already out.
 - `os._exit` skips atexit handlers **and stdio flush** — hence the explicit
   flush. Drop it and any `print()` in the hook silently disappears.
 

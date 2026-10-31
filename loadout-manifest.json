@@ -90,8 +90,7 @@
         "node"
       ],
       "optional": [
-        "titancall",
-        "dvttestkit"
+        "titancall"
       ],
       "events": {
         "SessionStart": [
@@ -247,12 +246,11 @@
     },
     "mqtt": {
       "label": "MQTT broadcast",
-      "summary": "Publish the session/tool/subagent/task lifecycle to status/{DeNa}/claude/# for MadQTT, SwarmDesk and sibling agents. Needs dvttestkit (and mosquitto_pub for retained context topics).",
+      "summary": "Publish the session/tool/subagent/task lifecycle to status/{DeNa}/claude/# for MadQTT, SwarmDesk and sibling agents, on the broker at MADNESS_MQTT_HOST:MADNESS_MQTT_PORT (built-in publisher, no extra packages).",
       "deps": [
         "python3"
       ],
       "optional": [
-        "dvttestkit",
         "mqtt"
       ],
       "includes": [

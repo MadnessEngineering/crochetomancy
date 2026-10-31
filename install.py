@@ -365,7 +365,7 @@ def write_sidecar(paths, tier, commands, groups, installed_at):
 # ── deps ───────────────────────────────────────────────────────────────────
 
 SERVICE_DEPS = {"mongo", "mqtt"}
-IMPORT_DEPS = {"pymongo", "dvttestkit", "dotenv"}
+IMPORT_DEPS = {"pymongo", "dotenv"}
 
 
 def probe(name):

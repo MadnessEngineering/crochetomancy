@@ -18,9 +18,9 @@ except ImportError:
 import uuid
 
 try:
-    from dvttestkit.testKitUtils import post as _mqtt_post
+    from utils.mqtt_publish import publish as _mqtt_post
     _MQTT_AVAILABLE = True
-except Exception:  # import connects to the broker; any failure means no MQTT
+except Exception:  # utils.mqtt_publish is stdlib-only; this guard is belt and braces
     _MQTT_AVAILABLE = False
 
 DEVICE_NAME = os.getenv("DeNa", "macbook")
@@ -40,7 +40,7 @@ def _fast_exit(code: int = 0):
 
     This hook blocks every tool call, and pymongo's shutdown costs ~575ms —
     roughly 60% of the hook's wall time, for work that is already finished.
-    insert_one is server-acked and paho's QoS-0 publish writes to the socket
+    insert_one is server-acked and the QoS-0 MQTT publish writes to the socket
     inline, so nothing is lost by skipping teardown. os._exit does NOT flush
     stdio, so do that ourselves first.
     """
