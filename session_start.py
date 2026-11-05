@@ -33,6 +33,7 @@ except Exception:  # utils.mqtt_publish is stdlib-only; this guard is belt and b
 from utils.session_color import apply_session_color
 from utils.fork_window import open_fork_window
 from utils.omnispindle_db import omnispindle_user_db_name
+from utils.injected_todos import clear_shown
 
 try:
     from dotenv import load_dotenv
@@ -479,6 +480,11 @@ def main():
         # Extract fields
         session_id = input_data.get('session_id', 'unknown')
         source = input_data.get('source', 'unknown')  # "startup", "resume", or "clear"
+
+        # Compaction and /clear drop the earlier injected todo blocks from
+        # context, so the prompt hook must show them again.
+        if source in ('compact', 'clear'):
+            clear_shown(session_id)
 
         # Visible chat name: full UUID (+ slug on resume). Stamp into input_data so it
         # reaches the Mongo doc too.

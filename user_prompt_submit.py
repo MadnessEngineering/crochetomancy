@@ -20,6 +20,7 @@ except ImportError:
 
 from utils.session_color import apply_session_color
 from utils.omnispindle_db import omnispindle_user_db_name
+from utils.injected_todos import load_shown, save_shown
 
 try:
     from dotenv import load_dotenv
@@ -89,9 +90,8 @@ def detect_project(cwd=None):
     return cwd.name.lower().replace('-', '_')
 
 
-def fetch_omnispindle_context(project: str) -> str | None:
-    """Query the user's Omnispindle todos for active items in this project.
-    Returns a compact context string, or None if unavailable."""
+def fetch_active_todos(project: str) -> list | None:
+    """The user's active Omnispindle todos for this project, or None if unavailable."""
     db_name = omnispindle_user_db_name()
     if not db_name:
         return None
@@ -106,20 +106,74 @@ def fetch_omnispindle_context(project: str) -> str | None:
             limit=8
         ))
         client.close()
-
-        if not active:
-            return None
-
-        lines = [f"[{project} todos — {len(active)} active]"]
-        for t in active:
-            pri = t.get('priority', 'Medium')
-            status = t.get('status', 'pending')
-            desc = t.get('description', '')[:100]
-            status_tag = f" ({status})" if status not in ('pending', 'initial') else ''
-            lines.append(f"• [{pri}]{status_tag} {desc}")
-        return '\n'.join(lines)
+        return active
     except Exception:
         return None
+
+
+_GONE = 'no-longer-active'
+
+
+def _todo_line(t: dict, status_note: str | None = None) -> str:
+    pri = t.get('priority', 'Medium')
+    status = t.get('status', 'pending')
+    desc = t.get('description', '')[:100]
+    if status_note:
+        status_tag = f" ({status_note})"
+    else:
+        status_tag = f" ({status})" if status not in ('pending', 'initial') else ''
+    return f"• [{pri}]{status_tag} {desc}"
+
+
+def fetch_omnispindle_context(project: str, session_id: str) -> str | None:
+    """Compact todo context for this prompt, sending each todo once per session.
+
+    The first prompt gets the active todos. Later prompts get only todos not
+    shown yet, todos whose status changed, and a line for shown todos that are
+    no longer active; nothing at all when nothing changed.
+    """
+    active = fetch_active_todos(project)
+    if active is None:
+        return None
+
+    shown = load_shown(session_id, project)
+    first = not shown
+    lines = []
+    remembered = dict(shown)
+    in_list = set()
+    for t in active:
+        todo_id = t.get('id')
+        if not todo_id:
+            continue
+        in_list.add(todo_id)
+        status = t.get('status', 'pending')
+        before = shown.get(todo_id, {}).get('status')
+        if before is None or before == _GONE:
+            lines.append(_todo_line(t))
+        elif before != status:
+            lines.append(_todo_line(t, f"{before} → {status}"))
+        remembered[todo_id] = {'status': status, 'description': t.get('description', '')[:100]}
+
+    # Report a todo leaving the list once, then remember it as gone so a
+    # later return counts as new.
+    gone = []
+    for todo_id, entry in shown.items():
+        if todo_id not in in_list and entry.get('status') != _GONE:
+            gone.append(entry.get('description', ''))
+            remembered[todo_id] = {**entry, 'status': _GONE}
+
+    save_shown(session_id, project, remembered)
+    if not lines and not gone:
+        return None
+
+    if first:
+        header = f"[{project} todos — {len(lines)} active]"
+    else:
+        header = f"[{project} todos — changes since last shown]"
+    out = [header] + lines
+    if gone:
+        out.append("No longer in the active list: " + "; ".join(d[:60] for d in gone[:5]))
+    return '\n'.join(out)
 
 
 def get_mongo_client():
@@ -322,7 +376,7 @@ def main():
 
         if args.inject_context and _cfg('context_injection'):
             project = detect_project()
-            context = fetch_omnispindle_context(project)
+            context = fetch_omnispindle_context(project, session_id)
             if context:
                 hook_output["additionalContext"] = context
 
