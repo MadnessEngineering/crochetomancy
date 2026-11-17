@@ -34,6 +34,7 @@ from utils.session_color import apply_session_color
 from utils.fork_window import open_fork_window
 from utils.omnispindle_db import omnispindle_user_db_name
 from utils.injected_todos import clear_shown
+from utils import session_store
 
 try:
     from dotenv import load_dotenv
@@ -449,8 +450,8 @@ def save_git_context_file(payload):
 def read_cached_agent_name(session_id):
     """Read agent_name from the sidecar written by user_prompt_submit.py, if present."""
     try:
-        session_file = Path(".claude/data/sessions") / f"{session_id}.json"
-        if session_file.exists():
+        session_file = session_store.existing_session_file(session_id)
+        if session_file:
             with open(session_file) as f:
                 return json.load(f).get("agent_name")
     except Exception:

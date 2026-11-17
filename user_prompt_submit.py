@@ -21,6 +21,7 @@ except ImportError:
 from utils.session_color import apply_session_color
 from utils.omnispindle_db import omnispindle_user_db_name
 from utils.injected_todos import load_shown, save_shown
+from utils import session_store
 
 try:
     from dotenv import load_dotenv
@@ -220,16 +221,14 @@ def manage_session_data(session_id, prompt, name_agent=False):
     """Manage session data in the new JSON structure."""
     import subprocess
 
-    # Ensure sessions directory exists
-    sessions_dir = Path(".claude/data/sessions")
-    sessions_dir.mkdir(parents=True, exist_ok=True)
+    # Always write to the shared store; read a legacy cwd-relative file once so
+    # sessions started before the move keep their agent name.
+    session_file = session_store.session_file(session_id)
+    existing = session_store.existing_session_file(session_id)
 
-    # Load or create session file
-    session_file = sessions_dir / f"{session_id}.json"
-
-    if session_file.exists():
+    if existing:
         try:
-            with open(session_file, 'r') as f:
+            with open(existing, 'r') as f:
                 session_data = json.load(f)
         except (json.JSONDecodeError, ValueError):
             session_data = {"session_id": session_id, "prompts": []}
@@ -280,6 +279,7 @@ def manage_session_data(session_id, prompt, name_agent=False):
 
     # Save the updated session data
     try:
+        session_file.parent.mkdir(parents=True, exist_ok=True)
         with open(session_file, 'w') as f:
             json.dump(session_data, f, indent=2)
     except Exception:
