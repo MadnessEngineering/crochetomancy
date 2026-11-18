@@ -3,7 +3,9 @@
 Hooks run on every tool call, so this stays small and fast: one TCP
 connection per call, no background threads, no third-party packages.
 
-Broker: MADNESS_MQTT_HOST / MADNESS_MQTT_PORT (default localhost:1883).
+Broker: MADNESS_MQTT_HOST / MADNESS_MQTT_PORT from the environment, else from
+~/.mad/mqtt.env (shared by every Madness tool, so apps launched from the Dock
+find the broker too), else localhost:1883.
 
 If the broker can't be reached, a marker file (one per host:port) makes every
 hook skip MQTT for that broker for DOWN_BACKOFF_SECONDS, so an unreachable
@@ -26,9 +28,27 @@ DOWN_BACKOFF_SECONDS = 60
 MARKER_DIR = Path.home() / ".claude"
 
 
+MAD_MQTT_ENV = Path.home() / ".mad" / "mqtt.env"
+
+
+def _mad_mqtt_env(path: Path = MAD_MQTT_ENV) -> dict:
+    """KEY=VALUE lines from ~/.mad/mqtt.env; empty if it's missing."""
+    values = {}
+    try:
+        for line in path.read_text().splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, value = line.split("=", 1)
+                values[key.strip()] = value.strip().strip("'\"")
+    except OSError:
+        pass
+    return values
+
+
 def broker():
-    host = os.getenv("MADNESS_MQTT_HOST") or "localhost"
-    port = int(os.getenv("MADNESS_MQTT_PORT") or 1883)
+    shared = _mad_mqtt_env()
+    host = os.getenv("MADNESS_MQTT_HOST") or shared.get("MADNESS_MQTT_HOST") or "localhost"
+    port = int(os.getenv("MADNESS_MQTT_PORT") or shared.get("MADNESS_MQTT_PORT") or 1883)
     return host, port
 
 

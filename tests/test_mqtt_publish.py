@@ -98,5 +98,41 @@ class DownBrokerTest(MarkerMixin, unittest.TestCase):
             self.assertFalse(mqtt_publish._broker_marked_down())
 
 
+
+class BrokerLookupTests(unittest.TestCase):
+    """Environment first, then ~/.mad/mqtt.env, then localhost:1883."""
+
+    def setUp(self):
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp)
+        self.env_file = self.tmp / "mqtt.env"
+        clean = {k: v for k, v in os.environ.items() if not k.startswith("MADNESS_MQTT_")}
+        patcher = mock.patch.dict(os.environ, clean, clear=True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        patcher = mock.patch.object(mqtt_publish, "MAD_MQTT_ENV", self.env_file)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def lookup(self):
+        # broker() reads the module default path; call through the helper so
+        # the patched MAD_MQTT_ENV is used.
+        shared = mqtt_publish._mad_mqtt_env(mqtt_publish.MAD_MQTT_ENV)
+        with mock.patch.object(mqtt_publish, "_mad_mqtt_env", lambda path=None: shared):
+            return mqtt_publish.broker()
+
+    def test_defaults_without_env_or_file(self):
+        self.assertEqual(self.lookup(), ("localhost", 1883))
+
+    def test_shared_file_is_used_when_env_is_unset(self):
+        self.env_file.write_text("# comment\nMADNESS_MQTT_HOST='broker.example'\nMADNESS_MQTT_PORT=4140\n")
+        self.assertEqual(self.lookup(), ("broker.example", 4140))
+
+    def test_environment_wins_over_the_file(self):
+        self.env_file.write_text("MADNESS_MQTT_HOST=broker.example\nMADNESS_MQTT_PORT=4140\n")
+        os.environ["MADNESS_MQTT_HOST"] = "env.example"
+        self.assertEqual(self.lookup(), ("env.example", 4140))
+
+
 if __name__ == "__main__":
     unittest.main()
